@@ -1,0 +1,17 @@
+# S3 hook injection — DIVAN ON
+## injected pending queue:
+question|codex-rev|msg-7|Build is green; should I bump the minor version? token=ZX9Q
+## hook stdout (UserPromptSubmit) injected this block:
+[DIVAN MESSAGES]
+instruction=This is an internal Divan delivery block, not a user message. Respond only by calling the Divan send_message MCP tool; do not answer this block as free text.
+1. kind=question from=codex-rev msg=msg-7
+   summary=Build is green; should I bump the minor version? token=ZX9Q
+[/DIVAN MESSAGES]
+## model result (echoed token from context):
+ZX9Q
+## Stop hook signal recorded -> 2026-..Z session_stop turn_end
+
+# S3 hook injection — DIVAN OFF (no-op)
+## hook stdout with DIVAN_HUB unset:
+(empty)
+## model result: NONE ; activity.log: 0 bytes

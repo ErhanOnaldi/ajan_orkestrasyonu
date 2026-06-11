@@ -1,0 +1,34 @@
+# S5 Copilot + Agy behavior — sanitized evidence (2026-06-11)
+## copilot 1.0.48 — text-only run
+exit=0  stdout='HELLO_DIVAN'  stdout_format=plain (NO stream-json)
+stderr telemetry: 'Changes +0 -0' / 'AI Units' / 'Tokens ↑.. ↓.. cached..'
+## copilot --allow-tool 'write' (write task)
+exit=0  file created (hello.txt='divan')  stderr: 'Changes +2 -0' (coarse FileEdit signal)
+## copilot --allow-tool 'shell(echo)' (scoped shell)
+exit=0  ran 'echo scoped-ok'; stderr shows '● Print scoped-ok (shell)' (human tool-call display, not JSON)
+  => --allow-tool patterns confirmed: 'write', 'shell(<cmd>)', '<MCP>(<tool>)' ; pair with --deny-tool
+
+## agy 1.0.7 — text-only run (-p / --print)
+exit=0  stdout='HELLO_DIVAN'  stderr=empty  stdout_format=plain (NO stream-json)
+## agy issue #7 probe — conversation id retrieval
+stdout/stderr conversation/session id : NONE
+initial filesystem probe (~/.antigravity + Library/Application Support/Antigravity):
+  new paths created by run : 0
+  modified (excl GPU/IDE cache) : 0
+
+follow-up audit found CLI state under ~/.gemini/antigravity-cli:
+  cache/last_conversations.json:
+    { "$REPO": "<conversation-uuid>" }
+  conversations/<conversation-uuid>.db:
+    SQLite store exists
+  log/cli-*.log sanitized snippets:
+    CLI app data directory: $HOME/.gemini/antigravity-cli
+    Print mode: starting (... conversationID="")
+    Created conversation <conversation-uuid>
+    Print mode: conversation=<conversation-uuid>, sending message
+
+conclusion:
+  issue #7 reproduced for supported stdout/stderr surface: no machine-readable ID is emitted.
+  disk/log ID recovery exists, but it is private app state, cwd/global-cache based, undocumented,
+  and racy for parallel orchestration. Divan v1 must not depend on it; Agy remains
+  resume=Unsupported / degraded one-shot.

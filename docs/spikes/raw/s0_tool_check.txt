@@ -1,0 +1,18 @@
+== Divan Faz 0 araç uygunluk kontrolü ==
+tarih: 2026-06-11T13:48:06Z
+platform: Darwin arm64
+
+[ Çekirdek / toolchain ]
+  rust         ✅  /Users/erhanonaldi/.cargo/bin/cargo  cargo 1.92.0 (344c4567c 2025-10-21)
+  git          ✅  /opt/homebrew/bin/git  git version 2.52.0
+  python3      ✅  /Users/erhanonaldi/.pyenv/shims/python3  Python 3.13.7
+  jq           ✅  /usr/bin/jq  jq-1.7.1-apple
+
+[ Faz 0 hedef ajan CLI'ları (spec §3.3) ]
+  claude       ✅  /Users/erhanonaldi/.nvm/versions/node/v22.19.0/bin/claude  2.1.173 (Claude Code)
+  codex        ✅  /Users/erhanonaldi/.local/bin/codex  codex-cli 0.139.0
+  copilot      ✅  /Users/erhanonaldi/.nvm/versions/node/v22.19.0/bin/copilot  GitHub Copilot CLI 1.0.48.
+  agy          ✅  /Users/erhanonaldi/.local/bin/agy  1.0.7
+  opencode     ✅  /Users/erhanonaldi/.nvm/versions/node/v22.19.0/bin/opencode  1.14.50
+
+Not: ⛔ işaretli araçlar için ilgili spike bloke olur (rapor: durum=⛔).

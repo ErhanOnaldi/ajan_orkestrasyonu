@@ -171,11 +171,11 @@ Lehte bulgular:
 
 Engelleyici kısıtlar:
 
-- **Oturum kimliği problemi (kritik):** `agy -p` çalıştırması, oluşturduğu konuşmanın ID'sini stdout/stderr/dosya hiçbir yerde döndürmemektedir. `--conversation <id>` ile belirli oturuma devam mümkündür ama ID'yi yakalamanın yolu yoktur; `-c/--continue` ise makinedeki _global en son_ konuşmayı devam ettirir — birden fazla bağımsız oturum yöneten bir orkestratör için bu kırıktır (upstream issue: google-antigravity/antigravity-cli#7). Aynı sorun diğer wrapper projelerini de (Vyzr, Crosstalk) engellemektedir.
+- **Oturum kimliği problemi (kritik):** `agy -p` çalıştırması, oluşturduğu konuşmanın ID'sini stdout/stderr üzerinden desteklenen, makine-okur bir sözleşmeyle döndürmemektedir. `--conversation <id>` ile belirli oturuma devam mümkündür ama desteklenen yüzeyden ID yakalamanın yolu yoktur; `-c/--continue` ise makinedeki _global en son_ konuşmayı devam ettirir — birden fazla bağımsız oturum yöneten bir orkestratör için bu kırıktır (upstream issue: google-antigravity/antigravity-cli#7). Faz 0/S5 audit'i `~/.gemini/antigravity-cli` altında private cache/log/SQLite state içinde conversation ID görülebildiğini buldu; ancak bu yüzey dokümante adaptör API'si değildir, cwd/global-cache bağımlıdır ve paralel orkestrasyonda race/cross-contamination riski taşır. Divan v1 private cache/log scraping'e dayanmayacaktır.
 - Yapılandırılmış akış çıktısı yoktur; `--output-format json` denemeleri hata vermektedir.
 - Asenkron subagent özelliği yalnızca interaktif TUI içindedir (`/agent`), headless yüzeyde yoktur.
 
-**Adaptör kararı:** v1'de `AgyAdapter` yalnızca durumsuz, tek atışlık görev türlerini kabul eder (`review`, `research`, `analyze`, `report`); `resume` çağrısı `Unsupported` döner ve Card'da beyan edilir. Çok turlu görevler Cost Router tarafından bu ajana atanmaz (router kuralı: `match: {multi_turn: true} exclude: [agy]`). Upstream issue #7 çözüldüğünde tam adaptöre yükseltilir; Faz 0/S5 spike'ı issue'nun durumunu kontrol etmeli ve `-p` çıktısının konuşma kayıt dosyalarını diskte bırakıp bırakmadığını (geçici çözüm potansiyeli) test etmelidir.
+**Adaptör kararı:** v1'de `AgyAdapter` yalnızca durumsuz, tek atışlık görev türlerini kabul eder (`review`, `research`, `analyze`, `report`); `resume` çağrısı `Unsupported` döner ve Card'da beyan edilir. Çok turlu görevler Cost Router tarafından bu ajana atanmaz (router kuralı: `match: {multi_turn: true} exclude: [agy]`). Upstream issue #7 çözüldüğünde veya Google desteklenen bir `--print` metadata/ID sözleşmesi sunduğunda tam adaptöre yükseltilir; private cache/log scraping v2 araştırma notu olarak kalır, v1 kapsamına alınmaz.
 
 ### 3.6 İki teslim yolu (K1)
 
@@ -484,6 +484,7 @@ Belirsizlik durumunda önce bu projelerin ilgili implementasyonu incelenmelidir.
 - Enjeksiyon bloğu davranış yönergesi tanımlandı (3.6 Yol A); hook kurulumuna merge/yedek kuralı eklendi.
 - Faz 1 ve Faz 2 iş listeleri ile kabul kriterleri yukarıdakilere göre genişletildi; risk tablosuna daemon çökmesi ve takılan ajan satırları eklendi; v2 ufku güncellendi.
 - Bölüm 6'ya platform kapsamı (P0.4) ve B planı kilit kuralı (P0.3) işlendi; Bölüm 0'a eşlik dokümanı kuralı eklendi.
+- Faz 0/S5 audit sonrası Agy oturum ID değerlendirmesi düzeltildi: desteklenen stdout/stderr ID yüzeyi hâlâ yoktur, fakat private `~/.gemini/antigravity-cli` cache/log state ID içerebilir; v1 bu unsupported scraping'e dayanmayacaktır.
 
 **v0.2** — Ajan-hedefli dil, ilham kaynakları (Bölüm 10), Copilot CLI ve Antigravity CLI uygunluk değerlendirmeleri (3.4, 3.5), Gemini CLI'ın kullanımdan kaldırılması.
 

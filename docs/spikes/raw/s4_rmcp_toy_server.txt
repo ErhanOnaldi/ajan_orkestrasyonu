@@ -1,0 +1,135 @@
+# Spike S4 — rmcp toy MCP server — sanitized raw evidence
+# Date: 2026-06-11  Tool: claude 2.1.173  rmcp: 1.7.0
+# Sanitization: no tokens/secrets. session_id is ephemeral local UUID, redacted below.
+
+====================================================================
+## A. Cargo.toml (toy-mcp, /tmp/divan_s4/toy-mcp — THROWAWAY)
+====================================================================
+[package]
+name = "toy-mcp"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "toy_mcp"
+path = "src/main.rs"
+
+[dependencies]
+rmcp = { version = "1.7.0", features = ["server", "macros", "transport-io"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-std"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "1"
+blake3 = "1"
+
+====================================================================
+## B. Locked rmcp version
+====================================================================
+name = "rmcp"
+version = "1.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+====================================================================
+## C. MCP initialize handshake (server stdout, smoke test)
+====================================================================
+{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"divan-toy-mcp","version":"0.1.0"},"instructions":"Divan S4 toy MCP face: send_message + publish_artifact."}}
+
+====================================================================
+## D. tools/list — schemas claude carries in context every turn
+====================================================================
+[
+  {
+    "name": "publish_artifact",
+    "description": "Store content and return its blake3 ref.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "content": {
+          "description": "Raw content to store; server returns its blake3 ref.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "title": "PublishArtifactArgs",
+      "type": "object"
+    }
+  },
+  {
+    "name": "send_message",
+    "description": "Queue a message to another agent. summary must be <= 400 chars.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "artifact_ref": {
+          "default": null,
+          "description": "Optional artifact pointer (blake3 ref).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "Message kind (e.g. \"status\", \"review\", \"handoff\").",
+          "type": "string"
+        },
+        "summary": {
+          "description": "Short summary; must be <= 400 chars (Divan message rule).",
+          "type": "string"
+        },
+        "to": {
+          "description": "Recipient agent id (e.g. \"codex-rev\").",
+          "type": "string"
+        }
+      },
+      "required": [
+        "to",
+        "kind",
+        "summary"
+      ],
+      "title": "SendMessageArgs",
+      "type": "object"
+    }
+  }
+]
+
+schema byte size (whole tools array):     1470 bytes
+
+====================================================================
+## E. claude headless roundtrip — system/init (mcp_servers)
+====================================================================
+{"mcp_servers":[{"name":"divan","status":"pending"}]}
+
+====================================================================
+## F. roundtrip — tool_use blocks (assistant events)
+====================================================================
+{"name":"ToolSearch","input":{"query":"select:send_message,publish_artifact","max_results":5}}
+{"name":"ToolSearch","input":{"query":"send_message publish_artifact divan","max_results":10}}
+{"name":"mcp__divan__send_message","input":{"to":"codex-rev","kind":"status","summary":"spike S4 roundtrip ok"}}
+{"name":"mcp__divan__publish_artifact","input":{"content":"hello divan"}}
+
+====================================================================
+## G. roundtrip — tool_result blocks (user events) — SERVER JSON
+====================================================================
+{"is_error":null,"content":"No matching deferred tools found"}
+{"is_error":null,"content":[{"type":"tool_reference","tool_name":"mcp__divan__publish_artifact"},{"type":"tool_reference","tool_name":"mcp__divan__send_message"}]}
+{"is_error":null,"content":[{"type":"text","text":"{\"status\":\"queued\",\"summary_len\":21}"}]}
+{"is_error":null,"content":[{"type":"text","text":"{\"bytes\":11,\"ref\":\"8fa2d5367fa41836a09617583aca8da42c590c281f8e82a8d1f2807ce7019d11\"}"}]}
+
+====================================================================
+## H. final result event
+====================================================================
+{"subtype":"success","is_error":false,"num_turns":5,"duration_ms":19097}
+
+====================================================================
+## I. blake3 independent cross-check of content='hello divan'
+====================================================================
+independent (fresh crate program): 8fa2d5367fa41836a09617583aca8da42c590c281f8e82a8d1f2807ce7019d11
+server publish_artifact returned  : 8fa2d5367fa41836a09617583aca8da42c590c281f8e82a8d1f2807ce7019d11
+MATCH: yes
+
+====================================================================
+## J. summary > 400 validation (raw tools/call, 401-char summary)
+====================================================================
+{"jsonrpc":"2.0","id":3,"error":{"code":-32602,"message":"summary too long: 401 chars (max 400)"}}

@@ -1,0 +1,13 @@
+# S2 codex exec --json — text-only run
+{"type":"thread.started","thread_id":"019eb6f5-ef28-7ae2-955c-33decb161cdb","item_type":null,"text":null,"usage":null}
+{"type":"turn.started","thread_id":null,"item_type":null,"text":null,"usage":null}
+{"type":"item.completed","thread_id":null,"item_type":"agent_message","text":"HELLO_DIVAN","usage":null}
+{"type":"turn.completed","thread_id":null,"item_type":null,"text":null,"usage":{"input_tokens":16948,"cached_input_tokens":4992,"output_tokens":26,"reasoning_output_tokens":16}}
+# S2 codex exec --json — write run (item.completed only)
+{"item_type":"agent_message","command":null,"exit_code":null,"status":null,"changes":null}
+{"item_type":"command_execution","command":"/bin/zsh -lc 'ls -l hello.txt'","exit_code":1,"status":"failed","changes":null}
+{"item_type":"agent_message","command":null,"exit_code":null,"status":null,"changes":null}
+{"item_type":"file_change","command":null,"exit_code":null,"status":"completed","changes":[{"path":"/tmp/divan_s2w/hello.txt","kind":"add"}]}
+{"item_type":"agent_message","command":null,"exit_code":null,"status":null,"changes":null}
+{"item_type":"command_execution","command":"/bin/zsh -lc \"wc -l hello.txt && sed -n '1,1p' hello.txt\"","exit_code":0,"status":"completed","changes":null}
+{"item_type":"agent_message","command":null,"exit_code":null,"status":null,"changes":null}
