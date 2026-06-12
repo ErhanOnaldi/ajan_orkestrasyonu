@@ -63,17 +63,21 @@ pub fn parse_line(line: &str) -> Vec<NormalizedEvent> {
 
     let ty = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
     match ty {
-        "item.completed" => parse_item(&v),
+        // The real codex 0.139.0 nests item fields under `item` (verified live);
+        // discriminate on `item.type`.
+        "item.completed" => v.get("item").map(parse_item).unwrap_or_default(),
         "turn.completed" => vec![NormalizedEvent::TurnEnd],
-        // thread.started handled via extract_thread_id; turn.started ignored.
+        // thread.started handled via extract_thread_id; turn.started / item.started ignored.
         _ => vec![],
     }
 }
 
-fn parse_item(v: &Value) -> Vec<NormalizedEvent> {
-    match v.get("item_type").and_then(|t| t.as_str()) {
+/// Map a completed `item` object to normalized events. `item` is the nested
+/// object from an `item.completed` line.
+fn parse_item(item: &Value) -> Vec<NormalizedEvent> {
+    match item.get("type").and_then(|t| t.as_str()) {
         Some("command_execution") => {
-            let command = v
+            let command = item
                 .get("command")
                 .and_then(|c| c.as_str())
                 .unwrap_or("")
@@ -82,20 +86,20 @@ fn parse_item(v: &Value) -> Vec<NormalizedEvent> {
                 name: "shell".into(),
                 input: Some(serde_json::json!({
                     "command": command,
-                    "exit_code": v.get("exit_code").cloned().unwrap_or(Value::Null),
-                    "status": v.get("status").cloned().unwrap_or(Value::Null),
+                    "exit_code": item.get("exit_code").cloned().unwrap_or(Value::Null),
+                    "status": item.get("status").cloned().unwrap_or(Value::Null),
                 })),
             }]
         }
         Some("mcp_tool_call") => vec![NormalizedEvent::ToolCall {
-            name: v
+            name: item
                 .get("command")
                 .and_then(|c| c.as_str())
                 .unwrap_or("mcp_tool")
                 .to_string(),
-            input: v.get("changes").cloned(),
+            input: item.get("changes").cloned(),
         }],
-        Some("file_change") => v
+        Some("file_change") => item
             .get("changes")
             .and_then(|c| c.as_array())
             .map(|changes| {
@@ -110,7 +114,7 @@ fn parse_item(v: &Value) -> Vec<NormalizedEvent> {
                     .collect()
             })
             .unwrap_or_default(),
-        // agent_message is assistant text — not a normalized event.
+        // agent_message is assistant text — captured separately as final_text.
         _ => vec![],
     }
 }
@@ -281,10 +285,12 @@ impl AgentAdapter for CodexAdapter {
 }
 
 /// Extract the text of an `agent_message` item line (the reviewer's prose).
+/// The item is nested under `item` in real codex output (verified live).
 fn extract_agent_message(line: &str) -> Option<String> {
     let v: Value = serde_json::from_str(line.trim()).ok()?;
-    if v.get("item_type").and_then(|t| t.as_str()) == Some("agent_message") {
-        return v
+    let item = v.get("item")?;
+    if item.get("type").and_then(|t| t.as_str()) == Some("agent_message") {
+        return item
             .get("text")
             .and_then(|t| t.as_str())
             .filter(|s| !s.is_empty())
@@ -323,13 +329,13 @@ pub async fn stream_child_stdout(
 mod tests {
     use super::*;
 
-    // Fixtures captured live in spike S2 (docs/spikes/raw/s2_codex_json.txt).
-    const STARTED: &str =
-        r#"{"type":"thread.started","thread_id":"019eb6f5-ef28","item_type":null}"#;
-    const MSG: &str =
-        r#"{"type":"item.completed","item_type":"agent_message","text":"HELLO_DIVAN"}"#;
-    const CMD: &str = r#"{"type":"item.completed","item_type":"command_execution","command":"/bin/zsh -lc 'ls'","exit_code":0,"status":"completed"}"#;
-    const FILE: &str = r#"{"type":"item.completed","item_type":"file_change","status":"completed","changes":[{"path":"/tmp/divan_s2w/hello.txt","kind":"add"}]}"#;
+    // Fixtures with the REAL codex 0.139.0 shape: item fields nested under
+    // `item` (verified live, 2026-06-12). The earlier spike capture was
+    // jq-projected/flattened, which did not match the wire format.
+    const STARTED: &str = r#"{"type":"thread.started","thread_id":"019eb6f5-ef28"}"#;
+    const MSG: &str = r#"{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"REVIEW OK"}}"#;
+    const CMD: &str = r#"{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc 'ls'","exit_code":0,"status":"completed"}}"#;
+    const FILE: &str = r#"{"type":"item.completed","item":{"id":"item_1","type":"file_change","status":"completed","changes":[{"path":"/tmp/divan_s2w/hello.txt","kind":"add"}]}}"#;
     const TURN: &str =
         r#"{"type":"turn.completed","usage":{"input_tokens":16948,"output_tokens":26}}"#;
 
@@ -340,8 +346,11 @@ mod tests {
     }
 
     #[test]
-    fn agent_message_is_not_an_event() {
+    fn agent_message_is_text_not_an_event_but_is_captured() {
+        // Not a normalized event, but its text is captured as final_text.
         assert!(parse_line(MSG).is_empty());
+        assert_eq!(extract_agent_message(MSG).as_deref(), Some("REVIEW OK"));
+        assert_eq!(extract_agent_message(CMD), None);
     }
 
     #[test]

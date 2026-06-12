@@ -45,6 +45,18 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!(orphaned, "reconciliation marked orphaned tasks failed");
     }
 
+    // Make Divan's per-repo state dir (`.divan/`) git-ignored so it doesn't make
+    // the target repo look "dirty" — otherwise `divan merge` would refuse on its
+    // own artifacts/worktrees. Writes `<.divan>/.gitignore` with `*` once.
+    if let Some(divan_dir) = config.artifact_root.parent() {
+        if std::fs::create_dir_all(divan_dir).is_ok() {
+            let gi = divan_dir.join(".gitignore");
+            if !gi.exists() {
+                let _ = std::fs::write(&gi, "*\n");
+            }
+        }
+    }
+
     // Wire the scheduler with the built-in adapters (claude=writer, codex=reviewer).
     let artifacts = Arc::new(ArtifactStore::new(db.clone(), config.artifact_root.clone()));
     let worktrees = Arc::new(WorktreeManager::new(config.worktree_root.clone()));

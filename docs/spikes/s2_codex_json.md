@@ -46,6 +46,15 @@ Notlar:
 
 ## 3. Gözlemler
 
+> **DÜZELTME (2026-06-12, Faz 1 canlı demo):** Bu rapordaki ham örnekler
+> `jq` ile *düzleştirilmiş* (projeksiyon) idi; gerçek wire formatı `item`
+> alanlarını **`item` nesnesi altında nest'ler**. Doğru yapı:
+> `{"type":"item.completed","item":{"type":"agent_message","text":"…"}}` —
+> yani ayrımcı `item.type`, metin `item.text`, değişiklikler `item.changes[]`.
+> `thread_id` ve `usage` üst düzeydedir (değişmedi). CodexAdapter parser'ı bu
+> nested yapıya göre düzeltildi; `agent_message` metni `SessionEnd.final_text`
+> olarak yakalanıp review artifact'ı olur. Test fixture'ları gerçek şekle güncellendi.
+
 Codex olay modeli claude'dan **yapısal olarak farklı**: hiyerarşi
 **thread → turn → item**. Akış yine JSONL.
 
