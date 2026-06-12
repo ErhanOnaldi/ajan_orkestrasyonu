@@ -60,10 +60,13 @@ async fn main() -> anyhow::Result<()> {
     // Wire the scheduler with the built-in adapters (claude=writer, codex=reviewer).
     let artifacts = Arc::new(ArtifactStore::new(db.clone(), config.artifact_root.clone()));
     let worktrees = Arc::new(WorktreeManager::new(config.worktree_root.clone()));
-    let mut scheduler = Scheduler::new(db, artifacts, worktrees, config.clone());
+    let mut scheduler = Scheduler::new(db.clone(), artifacts, worktrees, config.clone());
     scheduler.register_adapter(Arc::new(ClaudeAdapter::new("claude-1")))?;
     scheduler.register_adapter(Arc::new(CodexAdapter::new("codex-1")))?;
     let scheduler = Arc::new(scheduler);
+
+    // Message bus (K3-K6) shares the same SQLite handle.
+    let bus = divan_daemon::bus::MessageBus::new(db);
 
     // Serve until a `shutdown` RPC (or SIGINT/SIGTERM) arrives.
     let stop = Arc::new(tokio::sync::Notify::new());
@@ -73,6 +76,6 @@ async fn main() -> anyhow::Result<()> {
         signal_stop.notify_one();
     });
 
-    rpc::serve(&config.socket_path, scheduler, stop).await?;
+    rpc::serve(&config.socket_path, scheduler, bus, stop).await?;
     Ok(())
 }

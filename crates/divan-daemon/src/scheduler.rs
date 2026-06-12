@@ -517,6 +517,11 @@ impl Scheduler {
         self.db.clone()
     }
 
+    /// Shared artifact store (for MCP `publish_artifact`/`get_artifact`).
+    pub fn artifacts(&self) -> Arc<ArtifactStore> {
+        self.artifacts.clone()
+    }
+
     fn run_record(&self, task_id: &str) -> Result<RunRecord, FlowError> {
         self.runs
             .lock()

@@ -67,8 +67,9 @@ fn default_reviewer() -> String {
     "codex-1".into()
 }
 
-/// RPC method names (avoids stringly-typed drift between daemon and CLI).
+/// RPC method names (avoids stringly-typed drift between daemon, CLI, MCP, hooks).
 pub mod method {
+    // Faz 1 — CLI faces.
     pub const PING: &str = "ping";
     pub const STATUS: &str = "status";
     pub const SHUTDOWN: &str = "shutdown";
@@ -77,4 +78,20 @@ pub mod method {
     pub const DIFF: &str = "diff";
     pub const MERGE: &str = "merge";
     pub const CLEANUP: &str = "cleanup";
+
+    // Faz 2 — MCP tool faces (called by the divan-mcp server).
+    pub const MCP_SEND_MESSAGE: &str = "mcp.send_message";
+    pub const MCP_DELEGATE_TASK: &str = "mcp.delegate_task";
+    pub const MCP_CLAIM_TASK: &str = "mcp.claim_task";
+    pub const MCP_COMPLETE_TASK: &str = "mcp.complete_task";
+    pub const MCP_PUBLISH_ARTIFACT: &str = "mcp.publish_artifact";
+    pub const MCP_GET_ARTIFACT: &str = "mcp.get_artifact";
+    pub const MCP_SUBSCRIBE: &str = "mcp.subscribe";
+    pub const MCP_LIST_AGENTS: &str = "mcp.list_agents";
+
+    // Faz 2 — hook faces (called by hook scripts).
+    pub const HOOK_ACTIVITY: &str = "hook.activity";
+    pub const HOOK_TURN_END: &str = "hook.turn_end";
+    pub const HOOK_SESSION_IDLE: &str = "hook.session_idle";
+    pub const HOOK_CONFIRM: &str = "hook.confirm";
 }
