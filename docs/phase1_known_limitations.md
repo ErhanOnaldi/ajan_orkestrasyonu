@@ -16,10 +16,12 @@ Tarih: 2026-06-11.
 | F1.7 | ClaudeAdapter (S1 stream-json parser + spawn/observe/resume/kill) | ✅ |
 | F1.8 | CodexAdapter (S2 exec --json parser; exit-based SessionEnd) | ✅ |
 | F1.9 | CLI: `up/down/status/run/log/diff/merge/cleanup` | ✅ |
-| F1.10 | Demo + bu sınırlar belgesi | ⏳ canlı demo GIF kullanıcıda; fake-adaptör e2e testleri ✅ |
+| F1.10 | Demo + bu sınırlar belgesi | ✅ canlı gerçek-CLI demo koşturuldu (GIF kaydı opsiyonel) |
 
 **Test durumu:** `cargo test --workspace` → 85 test geçiyor. `cargo fmt` + `cargo clippy
---workspace --all-targets` temiz. Gerçek-CLI lifecycle dumanı (`up/status/down`) doğrulandı.
+--workspace --all-targets` temiz. **Gerçek-CLI write-review demosu (gerçek claude + codex)
+2026-06-12'de uçtan uca koşturuldu** (aşağıya bakınız); lifecycle dumanı (`up/status/down`)
+de doğrulandı.
 
 ## Doğrulanan kabul kriterleri (fake adaptör ile)
 
@@ -57,12 +59,27 @@ Bir kod incelemesi gerçek write-review yolunda altı sorun bulmuştu; hepsi gid
 6. **Gerçek-CLI / retry testleri eksikti** → env-gated `real_claude`/`real_codex` ve
    retry/exhaust testleri eklendi.
 
+## Canlı demo (F1.10 — 2026-06-12 koşturuldu)
+
+Throwaway git repolarında gerçek `claude` (implement) + gerçek `codex` (review) ile uçtan
+uca çalıştırıldı:
+
+- `divan up` (hedef repo dizininden) → daemon + claude-1/codex-1 kaydı.
+- `divan run "<görev>" --flow write-review --repo <repo>` → implement=done, review=done.
+- **Diff artifact** gerçek kodu taşıdı (`commit_all` commit'lenmemiş düzenlemeleri yakaladı).
+- **Review artifact** codex'in gerçek incelemesini taşıdı (findings/risks/verification/verdict;
+  `SessionEnd.final_text` ile yakalandı — fake testlerin göremediği nested-`item` parser hatası
+  bu canlı koşuda yakalanıp düzeltildi).
+- **Final report manifest** spec/diff/review ref'lerini bağladı; CLI `report artifact` ref'ini
+  yazdırdı.
+- `divan status`, `divan log` (codex'in `shell` tool_call'ları + state geçişleri + artifact
+  yayınları izlendi), `divan diff`, `divan merge` (kod repo branch'ine indi), `divan cleanup`
+  (worktree silindi, artifact'lar korundu) — hepsi çalıştı.
+- Yan bulgu + düzeltme: daemon artık hedef repoda `.divan/.gitignore` (`*`) yazar; aksi halde
+  Divan'ın kendi state'i repoyu "dirty" gösterip `divan merge`'ü reddediyordu.
+
 ## Bilinen sınırlar (v1 — bilinçli kararlar)
 
-- **Gerçek-CLI write-review demosu (F1.10) henüz canlı koşturulmadı.** Tüm akış fake
-  adaptörle test edildi; `divan run ... --repo <gerçek repo>` gerçek `claude`/`codex`
-  çağırır (token harcar, dakikalar sürebilir). Komut hazır, demo kullanıcı tarafından
-  tetiklenecek.
 - **Run kayıtları bellekte.** `divan diff|merge|cleanup <task-id>` yalnız daemon yeniden
   başlatılmadan çalışır (worktree run map'i RAM'de). `.divan/runs/` kalıcılığı sonraki iş.
 - **Artifact GC yok.** `divan cleanup` yalnız worktree siler; `.divan/artifacts/` büyür

@@ -2,9 +2,11 @@
 //!
 //! Spawn: `codex exec --json --skip-git-repo-check --sandbox workspace-write
 //! -C <worktree> -c approval_policy=never <prompt> < /dev/null`; review tasks
-//! use `--sandbox read-only` (spike S2 §6). Output is JSONL with a flat shape:
-//! top-level `type`, `thread_id`, `item_type`, `command`, `exit_code`,
-//! `status`, `changes`, `usage` (codex-cli 0.139.0, spike S2 §3).
+//! use `--sandbox read-only` (spike S2 §6). Output is JSONL. `thread_id` and
+//! `usage` are top-level, but item fields are NESTED under `item` (verified live
+//! 2026-06-12 — the spike S2 raw capture was jq-flattened and did not match):
+//! `{"type":"item.completed","item":{"type":"agent_message"|"file_change"|
+//! "command_execution","text"|"changes"|"command":…}}` (codex-cli 0.139.0).
 //!
 //! Security: the adapter NEVER passes `--dangerously-bypass-approvals-and-sandbox`
 //! (spike S2 §2). Isolation = sandbox + worktree path.
