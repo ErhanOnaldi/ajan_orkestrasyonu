@@ -52,6 +52,39 @@ enum Command {
     Merge { task_id: String },
     /// Remove a task's worktree (artifacts are kept).
     Cleanup { task_id: String },
+    /// Install Divan's turn-boundary + activity hooks into a tool's config
+    /// (merges with existing hooks, takes a backup; Faz 2).
+    InstallHooks {
+        /// Which tool: claude | codex | all.
+        #[arg(long, default_value = "claude")]
+        tool: String,
+        /// Agent id the hooks report as (defaults per tool).
+        #[arg(long)]
+        agent: Option<String>,
+    },
+    /// Remove Divan's hooks from a tool's config.
+    UninstallHooks {
+        #[arg(long, default_value = "claude")]
+        tool: String,
+    },
+    /// MCP server helpers.
+    Mcp {
+        #[command(subcommand)]
+        cmd: McpCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum McpCmd {
+    /// Print an MCP client config registering the Divan MCP server for an agent
+    /// (e.g. `claude --mcp-config <file>`). Faz 2, spec §3.6-B.
+    PrintConfig {
+        #[arg(long, default_value = "claude")]
+        tool: String,
+        /// The agent id the MCP server runs as (sets DIVAN_AGENT_ID).
+        #[arg(long)]
+        agent: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -104,7 +137,94 @@ async fn main() -> Result<()> {
             print_result("cleanup", &r);
             Ok(())
         }
+        Command::InstallHooks { tool, agent } => install_hooks(&tool, agent),
+        Command::UninstallHooks { tool } => uninstall_hooks(&tool),
+        Command::Mcp {
+            cmd: McpCmd::PrintConfig { tool, agent },
+        } => mcp_print_config(&tool, agent),
     }
+}
+
+/// Default agent id for a tool (the built-in registrations, F1).
+fn default_agent_for(tool: &str) -> &'static str {
+    match tool {
+        "codex" => "codex-1",
+        _ => "claude-1",
+    }
+}
+
+fn parse_hook_tools(tool: &str) -> Result<Vec<divan_hooks::HookTool>> {
+    use divan_hooks::HookTool::*;
+    match tool {
+        "claude" => Ok(vec![Claude]),
+        "codex" => Ok(vec![Codex]),
+        "all" => Ok(vec![Claude, Codex]),
+        other => bail!("unknown tool '{other}' (expected claude | codex | all)"),
+    }
+}
+
+fn install_hooks(tool: &str, agent: Option<String>) -> Result<()> {
+    for t in parse_hook_tools(tool)? {
+        let cfg = divan_hooks::default_config_dir(t);
+        let agent_id = agent
+            .clone()
+            .unwrap_or_else(|| default_agent_for(t.label()).to_string());
+        let report = divan_hooks::install(t, &cfg, &agent_id)
+            .with_context(|| format!("installing {} hooks into {}", t.label(), cfg.display()))?;
+        println!("divan: {} hooks", t.label());
+        for i in &report.installed {
+            println!("  + {i}");
+        }
+        if let Some(b) = &report.backup_path {
+            println!("  backup {}", b.display());
+        }
+        for s in &report.skipped {
+            println!("  (skipped) {s}");
+        }
+    }
+    Ok(())
+}
+
+fn uninstall_hooks(tool: &str) -> Result<()> {
+    for t in parse_hook_tools(tool)? {
+        let cfg = divan_hooks::default_config_dir(t);
+        divan_hooks::uninstall(t, &cfg)
+            .with_context(|| format!("uninstalling {} hooks", t.label()))?;
+        println!("divan: {} hooks removed", t.label());
+    }
+    Ok(())
+}
+
+/// Print an MCP client config registering the Divan MCP server for an agent.
+fn mcp_print_config(tool: &str, agent: Option<String>) -> Result<()> {
+    let agent_id = agent.unwrap_or_else(|| default_agent_for(tool).to_string());
+    let bin = mcp_binary_path()?;
+    let cfg = serde_json::json!({
+        "mcpServers": {
+            "divan": {
+                "command": bin.to_string_lossy(),
+                "args": [],
+                "env": { "DIVAN_AGENT_ID": agent_id }
+            }
+        }
+    });
+    println!("{}", serde_json::to_string_pretty(&cfg)?);
+    eprintln!(
+        "# register with e.g.: claude --mcp-config <file> --strict-mcp-config \\\n#   --allowedTools mcp__divan__send_message mcp__divan__publish_artifact ..."
+    );
+    Ok(())
+}
+
+/// Locate the `divan-mcp` binary next to this `divan` binary (falls back to PATH).
+fn mcp_binary_path() -> Result<PathBuf> {
+    let exe = std::env::current_exe()?;
+    let dir = exe.parent().context("no parent dir for current exe")?;
+    let cand = dir.join("divan-mcp");
+    Ok(if cand.exists() {
+        cand
+    } else {
+        PathBuf::from("divan-mcp")
+    })
 }
 
 /// Start the daemon if the socket isn't already answering (impl plan §F1.3:

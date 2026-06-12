@@ -1,0 +1,24 @@
+[package]
+name = "divan-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Divan MCP server face (rmcp stdio): forwards the 8 tools to the daemon socket."
+
+[[bin]]
+name = "divan-mcp"
+path = "src/main.rs"
+
+[dependencies]
+divan-core = { workspace = true }
+divan-daemon = { workspace = true }
+rmcp = { workspace = true }
+schemars = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

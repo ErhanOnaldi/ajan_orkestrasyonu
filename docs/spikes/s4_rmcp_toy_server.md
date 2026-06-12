@@ -175,6 +175,11 @@ Kod değil, gereksinim listesi:
   `Parameters` `handler::server::wrapper`'dan; `ServerInfo`/`Implementation`
   `#[non_exhaustive]` → builder zinciri (`ServerInfo::new(..).with_*`) kullan,
   struct literal kullanma.
+  > **DÜZELTME (Faz 2 `divan-mcp` implementasyonu, 2026-06-12):** `serverInfo`'yu
+  > `Implementation::from_build_env()` ile kurMA — o makro `env!`'leri **rmcp
+  > crate'inin** içinde genişler, sonuç `{"name":"rmcp","version":"1.7.0"}` olur.
+  > Tüketici crate'te `Implementation::new(env!("CARGO_PKG_NAME"),
+  > env!("CARGO_PKG_VERSION"))` kullan → doğru `{"name":"divan-mcp",...}`.
 - **Desen**: tek `struct DivanMcp { tool_router, <hub handle/kanallar> }`,
   `#[tool_router] impl` içinde §3.6-B'nin **8 aracı**; `#[tool_handler] impl ServerHandler`.
 - **Policy-check wrapping**: her `#[tool]` gövdesi, iş yapmadan **önce** Divan

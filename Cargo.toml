@@ -7,6 +7,8 @@ members = [
     "crates/divan-adapters",
     "crates/divan-daemon",
     "crates/divan-cli",
+    "crates/divan-mcp",
+    "crates/divan-hooks",
 ]
 
 [workspace.package]
@@ -34,11 +36,16 @@ clap = { version = "4", features = ["derive"] }
 # Observability
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# MCP server (Faz 2; rmcp 1.7.0 validated in spike S4)
+rmcp = { version = "1.7", features = ["server", "macros", "transport-io"] }
+schemars = "1"
 # Internal crates
 divan-core = { path = "crates/divan-core" }
 divan-db = { path = "crates/divan-db" }
 divan-trace = { path = "crates/divan-trace" }
 divan-adapters = { path = "crates/divan-adapters" }
+divan-daemon = { path = "crates/divan-daemon" }
+divan-hooks = { path = "crates/divan-hooks" }
 
 [profile.release]
 lto = "thin"
