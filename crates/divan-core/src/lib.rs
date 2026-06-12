@@ -11,6 +11,7 @@ pub mod error;
 pub mod event;
 pub mod ids;
 pub mod message;
+pub mod subscription;
 pub mod task;
 pub mod trace;
 
@@ -21,6 +22,7 @@ pub use error::{DivanError, Result};
 pub use event::{AgentErrorClass, FileChangeKind, NormalizedEvent, Usage};
 pub use ids::{AgentId, ArtifactRef, MessageId, SpanId, TaskId, TraceId};
 pub use message::{validate_summary, Message, MessageKind, MAX_SUMMARY_LEN};
+pub use subscription::{EventFilter, Subscription, EVENT_KIND_ANY};
 pub use task::{Task, TaskKind, TaskState, TransitionReason};
 pub use trace::{TraceEvent, TraceEventKind};
 

@@ -7,18 +7,22 @@
 //! block the event loop on SQLite). Repository methods here are synchronous.
 
 pub mod artifacts;
+pub mod conflicts;
 pub mod store;
 
 mod agents;
 mod messages;
+mod subscriptions;
 mod tasks;
 mod trace_store;
 
 pub use artifacts::ArtifactStore;
+pub use conflicts::{ConflictStore, CONFLICT_WINDOW_MS};
 pub use store::{Db, DbError, DbResult};
 
-// Repository trait surfaces (impl plan §F1.2). Implemented for `Db`.
+// Repository trait surfaces (impl plan §F1.2/§F2.4). Implemented for `Db`.
 pub use agents::AgentStore;
 pub use messages::MessageStore;
+pub use subscriptions::SubscriptionStore;
 pub use tasks::TaskStore;
 pub use trace_store::TraceStore;
