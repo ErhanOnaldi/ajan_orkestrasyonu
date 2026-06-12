@@ -1,0 +1,28 @@
+[package]
+name = "divan-daemon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Divan hub daemon: lifecycle, JSON-RPC IPC, scheduler, worktree manager, wiring."
+
+[[bin]]
+name = "divan-daemon"
+path = "src/main.rs"
+
+[dependencies]
+divan-core = { workspace = true }
+divan-db = { workspace = true }
+divan-adapters = { workspace = true }
+divan-trace = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,11 @@
+target/
+
+.divan/
+
+*.log
+*.tmp
+
+.DS_Store
+
+.idea/
+.vscode/

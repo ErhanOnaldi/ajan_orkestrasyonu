@@ -1,0 +1,17 @@
+[package]
+name = "divan-adapters"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Divan agent adapters: common trait + claude/codex parsers and process management."
+
+[dependencies]
+divan-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }

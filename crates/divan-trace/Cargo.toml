@@ -1,0 +1,13 @@
+[package]
+name = "divan-trace"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Divan trace query/render models (timeline; Faz 4 surface)."
+
+[dependencies]
+divan-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
