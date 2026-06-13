@@ -1,0 +1,20 @@
+[package]
+name = "divan-db"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+description = "Divan SQLite store: migrations, repositories, content-addressed artifact store."
+
+[dependencies]
+divan-core = { workspace = true }
+rusqlite = { workspace = true }
+blake3 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

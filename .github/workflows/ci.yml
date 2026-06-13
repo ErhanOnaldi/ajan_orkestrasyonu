@@ -1,0 +1,75 @@
+name: CI
+
+# F5.1 — PR/push checks: fmt, clippy, test, build on macOS + Linux.
+# Real-CLI contract tests are env-gated (DIVAN_TEST_CLAUDE/CODEX/COPILOT/AGY);
+# those env vars are intentionally NOT set here, so the suite that needs an
+# external CLI is skipped and CI never fails for a missing tool (F5.1 accept).
+
+on:
+  push:
+    branches: ["main", "phase-*"]
+  pull_request:
+    branches: ["main"]
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # NB: -D warnings is applied to clippy via the command line below, NOT as a
+  # global RUSTFLAGS — a global deny would also fail on harmless dependency
+  # warnings during build/test/MSRV.
+
+jobs:
+  # Fast, OS-independent gate: formatting + lints. Runs once on Linux.
+  lint:
+    name: fmt + clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # Build + test on both supported platforms (v1 = macOS + Linux, P0.4).
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: cargo build
+        run: cargo build --workspace --all-targets --locked
+      - name: cargo test
+        run: cargo test --workspace --locked
+
+  # Guard the documented MSRV (Cargo.toml rust-version = 1.88, the real floor —
+  # darling via rmcp/schemars requires 1.88) so we don't silently start
+  # depending on newer std/cargo features.
+  msrv:
+    name: msrv build (1.88)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust 1.88
+        uses: dtolnay/rust-toolchain@1.88
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: cargo build (MSRV)
+        run: cargo build --workspace --locked

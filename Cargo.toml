@@ -1,0 +1,58 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/divan-core",
+    "crates/divan-db",
+    "crates/divan-trace",
+    "crates/divan-adapters",
+    "crates/divan-daemon",
+    "crates/divan-cli",
+    "crates/divan-mcp",
+    "crates/divan-hooks",
+    "crates/divan-tui",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Erhan Önaldı"]
+repository = "https://github.com/ErhanOnaldi/ajan_orkestrasyonu"
+rust-version = "1.88"
+
+[workspace.dependencies]
+# Domain / serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+anyhow = "1"
+# Async runtime (hub daemon)
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "process", "time", "fs", "signal"] }
+async-trait = "0.1"
+# Storage
+rusqlite = { version = "0.31", features = ["bundled"] }
+blake3 = "1"
+# CLI
+clap = { version = "4", features = ["derive"] }
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# MCP server (Faz 2; rmcp 1.7.0 validated in spike S4)
+rmcp = { version = "1.7", features = ["server", "macros", "transport-io"] }
+schemars = "1"
+# Cost Router rule files (spec §5.2 router.rules.yaml)
+serde_yaml = "0.9"
+# TUI (Faz 4, spec §6 ratatui)
+ratatui = "0.29"
+crossterm = "0.28"
+# Internal crates
+divan-core = { path = "crates/divan-core" }
+divan-db = { path = "crates/divan-db" }
+divan-trace = { path = "crates/divan-trace" }
+divan-adapters = { path = "crates/divan-adapters" }
+divan-daemon = { path = "crates/divan-daemon" }
+divan-hooks = { path = "crates/divan-hooks" }
+
+[profile.release]
+lto = "thin"
+strip = true
