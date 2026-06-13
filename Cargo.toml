@@ -39,6 +39,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # MCP server (Faz 2; rmcp 1.7.0 validated in spike S4)
 rmcp = { version = "1.7", features = ["server", "macros", "transport-io"] }
 schemars = "1"
+# Cost Router rule files (spec §5.2 router.rules.yaml)
+serde_yaml = "0.9"
 # Internal crates
 divan-core = { path = "crates/divan-core" }
 divan-db = { path = "crates/divan-db" }

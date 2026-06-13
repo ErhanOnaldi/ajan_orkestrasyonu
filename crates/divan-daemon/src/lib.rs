@@ -7,6 +7,7 @@ pub mod config;
 pub mod lifecycle;
 pub mod policy;
 pub mod protocol;
+pub mod router;
 pub mod rpc;
 pub mod scheduler;
 pub mod worktree;
