@@ -186,9 +186,14 @@ fn render_messages(frame: &mut Frame, area: Rect, snapshot: &Snapshot, focused: 
             .iter()
             .map(|m| {
                 let mark = if m.delivered { "✓" } else { "·" };
+                // Show the fan-out edge: a copy whose origin is a broadcast id.
+                let origin = match &m.origin {
+                    Some(o) => format!(" ⤴{o}"),
+                    None => String::new(),
+                };
                 ListItem::new(format!(
-                    "{} {:<8} {:<10} -> {:<10} {}",
-                    mark, m.kind, m.from, m.to, m.summary
+                    "{} {:<8} {:<10} -> {:<10} {}{}",
+                    mark, m.kind, m.from, m.to, m.summary, origin
                 ))
             })
             .collect()
@@ -276,7 +281,7 @@ mod tests {
                 to: "codex-1".into(),
                 kind: "result".into(),
                 summary: "implemented feature".into(),
-                origin: None,
+                origin: Some("b-42".into()),
                 delivered: true,
             }],
             trace: TraceDetail {
@@ -317,6 +322,7 @@ mod tests {
         // §F4.2 projection: agent current task + task dependency edges visible.
         assert!(out.contains("@t-1"), "agent current_task shown");
         assert!(out.contains("deps[t-1]"), "task dependency edge shown");
+        assert!(out.contains("b-42"), "message fan-out origin edge shown");
     }
 
     #[test]
