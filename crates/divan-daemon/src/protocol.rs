@@ -94,8 +94,14 @@ pub mod method {
     pub const HOOK_TURN_END: &str = "hook.turn_end";
     pub const HOOK_SESSION_IDLE: &str = "hook.session_idle";
     pub const HOOK_CONFIRM: &str = "hook.confirm";
+    /// Faz 3 — PreToolUse write-path boundary check (F3.2).
+    pub const HOOK_PRETOOLUSE: &str = "hook.pretooluse";
 
     // Faz 2 — CLI read commands (impl plan §7 Faz 2 command list).
     pub const AGENTS: &str = "agents";
     pub const MESSAGES: &str = "messages";
+
+    // Faz 3 — router/policy commands (impl plan §7 Faz 3 command list).
+    pub const ROUTER_EXPLAIN: &str = "router.explain";
+    pub const KILL_SESSION: &str = "kill_session";
 }

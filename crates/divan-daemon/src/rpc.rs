@@ -121,9 +121,16 @@ async fn dispatch(req: RpcRequest, state: &DaemonState) -> RpcResponse {
         method::HOOK_ACTIVITY => hook_activity(&req, state),
         method::HOOK_TURN_END | method::HOOK_SESSION_IDLE => hook_pending_batch(&req, state),
         method::HOOK_CONFIRM => hook_confirm(&req, state),
+        method::HOOK_PRETOOLUSE => hook_pretooluse(&req, state),
         // ---- Phase 2: CLI read commands ----
         method::AGENTS => mcp_list_agents(&req, state),
         method::MESSAGES => messages(&req, state),
+        // ---- Phase 3: router / policy ----
+        method::ROUTER_EXPLAIN => match scheduler.explain_route(param_str(&req, "task_id")) {
+            Ok(v) => RpcResponse::ok(v),
+            Err(e) => RpcResponse::err(e.to_string()),
+        },
+        method::KILL_SESSION => kill_session(&req, state),
         other => RpcResponse::err(format!("unknown method: {other}")),
     }
 }
@@ -458,6 +465,18 @@ fn mcp_complete_task(req: &RpcRequest, state: &DaemonState) -> RpcResponse {
     }))
 }
 
+/// `kill_session`: a caller asks to kill an agent's session. Gated by the policy
+/// engine — requires the `kill` capability AND caller ownership (spec §5.1,
+/// F3.1/F3.6). The watchdog's own kills bypass policy (hub authority, spec §3.7).
+fn kill_session(req: &RpcRequest, state: &DaemonState) -> RpcResponse {
+    let caller = AgentId::new(param_str(req, "caller"));
+    let owner = AgentId::new(param_str(req, "session_owner"));
+    match policy::check_kill(&state.scheduler.db(), &caller, &owner) {
+        Ok(()) => RpcResponse::ok(serde_json::json!({"killed": true, "owner": owner.as_str()})),
+        Err(e) => RpcResponse::err(e.to_string()),
+    }
+}
+
 // ---- hook handlers ----
 
 fn hook_activity(req: &RpcRequest, state: &DaemonState) -> RpcResponse {
@@ -484,6 +503,43 @@ fn hook_pending_batch(req: &RpcRequest, state: &DaemonState) -> RpcResponse {
         })),
         Ok(None) => RpcResponse::ok(serde_json::json!({"has_messages": false})),
         Err(e) => RpcResponse::err(e.to_string()),
+    }
+}
+
+/// PreToolUse write-path boundary check (F3.2): given the agent + the file path
+/// a Write/Edit tool is about to touch, allow it only if the path is inside the
+/// agent's active-task worktree (policy `check_write`). Returns `{allow, reason}`
+/// — a denial is a policy outcome, not an RPC error, so the agent keeps running.
+fn hook_pretooluse(req: &RpcRequest, state: &DaemonState) -> RpcResponse {
+    let agent = AgentId::new(param_str(req, "agent_id"));
+    let path = param_str(req, "path");
+    if path.is_empty() {
+        return RpcResponse::ok(serde_json::json!({"allow": true}));
+    }
+    let db = state.scheduler.db();
+    // The agent's active worktree = its `working` task that has a worktree.
+    let worktree = db.list_tasks().ok().and_then(|tasks| {
+        tasks
+            .into_iter()
+            .find(|t| {
+                t.assignee.as_ref() == Some(&agent)
+                    && t.state == divan_core::TaskState::Working
+                    && t.worktree.is_some()
+            })
+            .and_then(|t| t.worktree)
+    });
+    match worktree {
+        // No known worktree => no boundary to enforce here (allow; other gates apply).
+        None => RpcResponse::ok(serde_json::json!({"allow": true, "reason": "no active worktree"})),
+        Some(wt) => match policy::check_write(
+            &db,
+            &agent,
+            std::path::Path::new(path),
+            std::path::Path::new(&wt),
+        ) {
+            Ok(()) => RpcResponse::ok(serde_json::json!({"allow": true})),
+            Err(e) => RpcResponse::ok(serde_json::json!({"allow": false, "reason": e.reason})),
+        },
     }
 }
 

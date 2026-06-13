@@ -19,8 +19,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+pub mod agy;
 pub mod claude;
 pub mod codex;
+pub mod copilot;
 pub mod fake;
 
 /// Context handed to an adapter when spawning a session (impl plan §6.1).

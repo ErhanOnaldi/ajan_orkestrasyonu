@@ -114,9 +114,11 @@ pub fn default_socket_path() -> PathBuf {
 
 const TURN_END_TMPL: &str = include_str!("../scripts/divan-turn-end.sh.tmpl");
 const ACTIVITY_TMPL: &str = include_str!("../scripts/divan-activity.sh.tmpl");
+const PRETOOLUSE_TMPL: &str = include_str!("../scripts/divan-pretooluse.sh.tmpl");
 
 const TURN_END_SCRIPT: &str = "divan-turn-end.sh";
 const ACTIVITY_SCRIPT: &str = "divan-activity.sh";
+const PRETOOLUSE_SCRIPT: &str = "divan-pretooluse.sh";
 
 /// Render a hook script template with the agent id + socket path substituted.
 fn render_script(tmpl: &str, agent_id: &str, socket_path: &Path) -> String {
@@ -177,6 +179,7 @@ fn install_claude(
 
     let turn_end_path = script_dir.join(TURN_END_SCRIPT);
     let activity_path = script_dir.join(ACTIVITY_SCRIPT);
+    let pretooluse_path = script_dir.join(PRETOOLUSE_SCRIPT);
 
     write_script(
         &turn_end_path,
@@ -186,12 +189,19 @@ fn install_claude(
         &activity_path,
         &render_script(ACTIVITY_TMPL, agent_id, socket_path),
     )?;
+    write_script(
+        &pretooluse_path,
+        &render_script(PRETOOLUSE_TMPL, agent_id, socket_path),
+    )?;
     report
         .installed
         .push(turn_end_path.to_string_lossy().into_owned());
     report
         .installed
         .push(activity_path.to_string_lossy().into_owned());
+    report
+        .installed
+        .push(pretooluse_path.to_string_lossy().into_owned());
 
     // 2/3. Back up settings.json, then merge Divan's hook entries idempotently.
     let settings_path = config_dir.join("settings.json");
@@ -204,12 +214,11 @@ fn install_claude(
     }
 
     let merged =
-        settings::merge_install(original, &turn_end_path, &activity_path).map_err(|e| {
-            HookError::Settings {
+        settings::merge_install(original, &turn_end_path, &activity_path, &pretooluse_path)
+            .map_err(|e| HookError::Settings {
                 path: settings_path.clone(),
                 source: e,
-            }
-        })?;
+            })?;
     write_settings(&settings_path, &merged)?;
 
     report.installed.push(format!(

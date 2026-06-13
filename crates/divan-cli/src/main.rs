@@ -81,6 +81,17 @@ enum Command {
         #[command(subcommand)]
         cmd: McpCmd,
     },
+    /// Cost Router helpers.
+    Router {
+        #[command(subcommand)]
+        cmd: RouterCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum RouterCmd {
+    /// Explain how the Cost Router routes a task (picked agent, rules, reasons).
+    Explain { task_id: String },
 }
 
 #[derive(Subcommand)]
@@ -162,6 +173,25 @@ async fn main() -> Result<()> {
         Command::Mcp {
             cmd: McpCmd::PrintConfig { tool, agent },
         } => mcp_print_config(&tool, agent),
+        Command::Router {
+            cmd: RouterCmd::Explain { task_id },
+        } => {
+            let r = call(
+                sock,
+                method::ROUTER_EXPLAIN,
+                serde_json::json!({"task_id": task_id}),
+            )
+            .await?;
+            if r.ok {
+                println!("{}", serde_json::to_string_pretty(&r.result)?);
+            } else {
+                eprintln!(
+                    "divan: router explain failed: {}",
+                    r.error.unwrap_or_default()
+                );
+            }
+            Ok(())
+        }
     }
 }
 

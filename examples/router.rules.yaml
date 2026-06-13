@@ -1,0 +1,24 @@
+# Divan Cost Router rules (K9, spec §5.2). Deterministic: match → prefer/exclude.
+# Loaded by the daemon; see `divan router explain <task-id>`.
+#
+# match:   conditions on the task (kind, multi_turn). Empty match = all tasks.
+# prefer:  soft scoring — cost_class ("<=2", ">=4", "=3"), skills, and
+#          different_vendor_than: author (pick a reviewer from another vendor).
+# exclude: hard filter — drop candidates by tool or multi_turn.
+rules:
+  # Cheap agents for tests.
+  - match: { kind: test }
+    prefer: { cost_class: "<=2" }
+
+  # Reviews go to a review-skilled agent from a DIFFERENT vendor than the author
+  # (independent verification — the Faz 1 write-review differentiator).
+  - match: { kind: review }
+    prefer: { skills: [review], different_vendor_than: author }
+
+  # Planning wants a stronger (more expensive) model.
+  - match: { kind: plan }
+    prefer: { cost_class: ">=4" }
+
+  # Multi-turn work never goes to agy (degraded one-shot, spec §3.5 / issue #7).
+  - match: { multi_turn: true }
+    exclude: { tool: agy }

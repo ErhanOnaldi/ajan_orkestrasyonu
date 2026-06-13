@@ -1,0 +1,33 @@
+# Example Divan agent registry (mirrors config.toml [[agents]], spec §8.1).
+# cost_class: 1 cheap .. 5 expensive. capabilities default to the narrowest set;
+# only a human widens them (K8). multi_turn=false agents (agy) are one-shot.
+agents:
+  - id: claude-1
+    tool: claude
+    cost_class: 5
+    skills: [implement, architecture]
+    capabilities: [read, write, delegate]
+    multi_turn: true
+
+  - id: codex-1
+    tool: codex
+    cost_class: 4
+    skills: [review, test]
+    capabilities: [read]
+    multi_turn: true
+
+  - id: copilot-1
+    tool: copilot
+    cost_class: 3
+    skills: [implement]
+    # write is compiled to `--allow-tool 'write'` scoped to the task worktree (F3.4).
+    capabilities: [read, write]
+    multi_turn: true
+
+  - id: agy-1
+    tool: agy
+    cost_class: 2
+    skills: [review, research, analyze, report]
+    capabilities: [read]
+    # one-shot only (spec §3.5); the router never assigns multi-turn work here.
+    multi_turn: false

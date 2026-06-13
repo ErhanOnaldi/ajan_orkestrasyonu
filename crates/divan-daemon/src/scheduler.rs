@@ -98,6 +98,9 @@ pub struct Scheduler {
     /// Message bus, used to record file touches + raise conflict alerts on live
     /// `FileEdit` events (F2.6). `None` in pure scheduler unit tests.
     bus: Option<crate::bus::MessageBus>,
+    /// Cost Router (K9): when set, selects the reviewer (different vendor than
+    /// the writer) instead of using the caller-supplied default (F3.3).
+    router: Option<crate::router::CostRouter>,
     /// Retryable-error retry budget (spec §3.2 default 2).
     max_retries: u32,
     /// Backoff base between retries (kept tiny in tests).
@@ -119,6 +122,7 @@ impl Scheduler {
             config,
             runs: std::sync::Mutex::new(HashMap::new()),
             bus: None,
+            router: None,
             max_retries: 2,
             retry_delay: Duration::from_millis(50),
         }
@@ -129,6 +133,61 @@ impl Scheduler {
     pub fn with_bus(mut self, bus: crate::bus::MessageBus) -> Self {
         self.bus = Some(bus);
         self
+    }
+
+    /// Attach the Cost Router so the reviewer is selected by rule (F3.3).
+    pub fn with_router(mut self, router: crate::router::CostRouter) -> Self {
+        self.router = Some(router);
+        self
+    }
+
+    /// Select the reviewer for a write-review run. With a router attached, pick a
+    /// review-skilled agent from a different vendor than the writer (spec §5.2);
+    /// otherwise fall back to `default_reviewer`. Emits a `router_decision` trace.
+    fn select_reviewer(
+        &self,
+        writer: &AgentId,
+        default_reviewer: &AgentId,
+        trace: &TraceId,
+    ) -> AgentId {
+        use divan_db::AgentStore;
+        let Some(router) = &self.router else {
+            return default_reviewer.clone();
+        };
+        let cards = match self.db.list_agents() {
+            Ok(c) => c,
+            Err(_) => return default_reviewer.clone(),
+        };
+        let writer_card = cards.iter().find(|c| &c.id == writer).cloned();
+        // Candidates exclude the writer itself.
+        let candidates: Vec<_> = cards.into_iter().filter(|c| &c.id != writer).collect();
+        let task = crate::router::RouteTask {
+            kind: TaskKind::Review,
+            multi_turn: false,
+        };
+        match router.pick(&task, &candidates, writer_card.as_ref()) {
+            Ok(decision) => {
+                let _ = self.db.append_event(
+                    &TraceEvent::new(
+                        trace.clone(),
+                        TraceEventKind::RouterDecision,
+                        divan_core::now_ms(),
+                    )
+                    .with_agent(decision.agent.clone())
+                    .with_data(serde_json::json!({
+                        "for": "review",
+                        "writer": writer.as_str(),
+                        "matched_rules": decision.matched_rules,
+                        "reasons": decision.reasons,
+                    })),
+                );
+                decision.agent
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "router found no reviewer; using default");
+                default_reviewer.clone()
+            }
+        }
     }
 
     /// Test/runtime knob for retry backoff.
@@ -313,11 +372,15 @@ impl Scheduler {
         spec_text: &str,
         repo: &Path,
         writer: &AgentId,
-        reviewer: &AgentId,
+        default_reviewer: &AgentId,
     ) -> Result<FinalReport, FlowError> {
         let now = divan_core::now_ms();
         let trace_id = TraceId::new(format!("trace-{now}"));
         let slug = slugify(title);
+        // Router selects the reviewer (different vendor than the writer, F3.3);
+        // falls back to the caller-supplied default when no router is attached.
+        let reviewer = self.select_reviewer(writer, default_reviewer, &trace_id);
+        let reviewer = &reviewer;
 
         // Spec artifact (K4 pointer).
         let spec_ref = self
@@ -538,6 +601,71 @@ impl Scheduler {
     /// Clone of the shared DB handle for read-only RPC queries (status/log).
     pub fn db(&self) -> divan_db::Db {
         self.db.clone()
+    }
+
+    /// Explain how the Cost Router would route a task (`divan router explain`,
+    /// F3.3/F3.6). Shows the picked agent, matched rule ids, reasons, and — for a
+    /// Copilot pick — the compiled `--allow-tool` args (F3.4 acceptance).
+    pub fn explain_route(&self, task_id: &str) -> Result<serde_json::Value, FlowError> {
+        use divan_db::AgentStore;
+        let Some(router) = &self.router else {
+            return Ok(serde_json::json!({"router": "none (default reviewer used)"}));
+        };
+        let task = self.must_get(&TaskId::new(task_id))?;
+        let cards = self.db.list_agents()?;
+        // The author is the implement task's assignee within the same trace
+        // (so a review's different_vendor_than:author resolves meaningfully).
+        let author = self
+            .db
+            .list_tasks()?
+            .into_iter()
+            .find(|t| t.trace_id == task.trace_id && t.kind == TaskKind::Implement)
+            .and_then(|t| t.assignee)
+            .and_then(|a| cards.iter().find(|c| c.id == a).cloned());
+        // Read-only (one-shot) kinds don't need a multi-turn agent.
+        let one_shot = matches!(
+            task.kind,
+            TaskKind::Review | TaskKind::Research | TaskKind::Analyze | TaskKind::Report
+        );
+        let candidates: Vec<_> = cards
+            .iter()
+            .filter(|c| author.as_ref().map(|a| a.id != c.id).unwrap_or(true))
+            .cloned()
+            .collect();
+        let route = crate::router::RouteTask {
+            kind: task.kind,
+            multi_turn: !one_shot,
+        };
+        match router.pick(&route, &candidates, author.as_ref()) {
+            Ok(d) => {
+                // Copilot `--allow-tool` preview (F3.4): write task -> ["write"].
+                let allow_tools = cards
+                    .iter()
+                    .find(|c| c.id == d.agent && c.tool == divan_core::AgentTool::Copilot)
+                    .map(|_| {
+                        divan_adapters::copilot::compile_allow_tools(&SpawnCtx {
+                            worktree: None,
+                            env: HashMap::new(),
+                            trace_id: String::new(),
+                            span_id: String::new(),
+                            artifact_refs: vec![],
+                            read_only: one_shot,
+                            prompt: String::new(),
+                            max_turns: None,
+                        })
+                    });
+                Ok(serde_json::json!({
+                    "task": task_id,
+                    "kind": task.kind.as_str(),
+                    "picked": d.agent.as_str(),
+                    "author": author.as_ref().map(|a| a.id.as_str()),
+                    "matched_rules": d.matched_rules,
+                    "reasons": d.reasons,
+                    "allow_tool": allow_tools,
+                }))
+            }
+            Err(e) => Ok(serde_json::json!({"task": task_id, "error": e.to_string()})),
+        }
     }
 
     /// Shared artifact store (for MCP `publish_artifact`/`get_artifact`).

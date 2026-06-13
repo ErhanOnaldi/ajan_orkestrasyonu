@@ -7,9 +7,12 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use divan_adapters::{claude::ClaudeAdapter, codex::CodexAdapter};
+use divan_adapters::{
+    agy::AgyAdapter, claude::ClaudeAdapter, codex::CodexAdapter, copilot::CopilotAdapter,
+};
 use divan_daemon::config::DaemonConfig;
 use divan_daemon::lifecycle::{reconcile, LockFile};
+use divan_daemon::router::CostRouter;
 use divan_daemon::scheduler::Scheduler;
 use divan_daemon::{rpc, worktree::WorktreeManager};
 use divan_db::{ArtifactStore, Db};
@@ -63,10 +66,15 @@ async fn main() -> anyhow::Result<()> {
     // Message bus (K3-K6) shares the same SQLite handle.
     let bus = divan_daemon::bus::MessageBus::new(db.clone());
 
-    let mut scheduler =
-        Scheduler::new(db, artifacts, worktrees, config.clone()).with_bus(bus.clone());
+    let mut scheduler = Scheduler::new(db, artifacts, worktrees, config.clone())
+        .with_bus(bus.clone())
+        .with_router(CostRouter::default_rules());
+    // Built-in adapters (the §3.3 matrix). Copilot is the 3rd adapter (F3.4);
+    // agy is the degraded one-shot 4th (F3.5, multi_turn=false).
     scheduler.register_adapter(Arc::new(ClaudeAdapter::new("claude-1")))?;
     scheduler.register_adapter(Arc::new(CodexAdapter::new("codex-1")))?;
+    scheduler.register_adapter(Arc::new(CopilotAdapter::new("copilot-1")))?;
+    scheduler.register_adapter(Arc::new(AgyAdapter::new("agy-1")))?;
     let scheduler = Arc::new(scheduler);
 
     // Serve until a `shutdown` RPC (or SIGINT/SIGTERM) arrives.

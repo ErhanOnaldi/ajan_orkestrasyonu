@@ -47,6 +47,7 @@ async fn spawn_daemon(
             divan_core::Capability::Broadcast,
             divan_core::Capability::Delegate,
             divan_core::Capability::Read,
+            divan_core::Capability::Write,
         ],
     ))
     .unwrap();
@@ -154,6 +155,74 @@ async fn broadcast_requires_subscription_and_capability() {
     assert!(!r.ok);
     assert!(r.error.unwrap().contains("broadcast"));
 
+    let _ = call(&sock, method::SHUTDOWN, Value::Null).await;
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn pretooluse_enforces_worktree_write_boundary() {
+    use divan_db::TaskStore;
+    let dir = tempfile::tempdir().unwrap();
+    let (sock, db, _stop, handle) = spawn_daemon(dir.path()).await;
+
+    // claude-1 (has write) has a Working task with a worktree.
+    let wt = dir.path().join("wt");
+    let task = divan_core::Task {
+        id: divan_core::TaskId::new("t1"),
+        parent_id: None,
+        kind: divan_core::TaskKind::Implement,
+        title: "t".into(),
+        spec_ref: None,
+        state: divan_core::TaskState::Working,
+        assignee: Some(divan_core::AgentId::new("claude-1")),
+        worktree: Some(wt.to_string_lossy().into_owned()),
+        max_runtime_secs: None,
+        trace_id: divan_core::TraceId::new("tr-wt"),
+        created_at: 0,
+        updated_at: 0,
+    };
+    db.create_task(&task).unwrap();
+
+    // A write inside the worktree is allowed.
+    let inside = wt.join("src/x.rs");
+    let r = call(
+        &sock,
+        method::HOOK_PRETOOLUSE,
+        json!({"agent_id":"claude-1","path": inside.to_string_lossy()}),
+    )
+    .await;
+    assert_eq!(r.result["allow"], true);
+
+    // A write escaping the worktree is denied (F3.2) — but it's a policy outcome,
+    // not an RPC error (the agent keeps running).
+    let outside = wt.join("../escape.rs");
+    let r = call(
+        &sock,
+        method::HOOK_PRETOOLUSE,
+        json!({"agent_id":"claude-1","path": outside.to_string_lossy()}),
+    )
+    .await;
+    assert!(r.ok);
+    assert_eq!(r.result["allow"], false);
+
+    let _ = call(&sock, method::SHUTDOWN, Value::Null).await;
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn kill_session_denied_for_non_owner() {
+    // F3.6: an unauthorized kill attempt is policy-denied.
+    let dir = tempfile::tempdir().unwrap();
+    let (sock, _db, _stop, handle) = spawn_daemon(dir.path()).await;
+    // codex-1 (read-only, no `kill`) tries to kill claude-1's session.
+    let r = call(
+        &sock,
+        method::KILL_SESSION,
+        json!({"caller":"codex-1","session_owner":"claude-1"}),
+    )
+    .await;
+    assert!(!r.ok);
+    assert!(r.error.unwrap().contains("kill"));
     let _ = call(&sock, method::SHUTDOWN, Value::Null).await;
     let _ = handle.await;
 }

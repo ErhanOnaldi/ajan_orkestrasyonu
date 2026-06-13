@@ -32,10 +32,17 @@ pub enum SettingsError {
 
 const TURN_END_EVENT: &str = "UserPromptSubmit";
 const ACTIVITY_EVENT: &str = "Stop";
+const PRETOOLUSE_EVENT: &str = "PreToolUse";
+/// Matcher for the write-path boundary hook (F3.2): only file-mutating tools.
+const PRETOOLUSE_MATCHER: &str = "Write|Edit|MultiEdit";
 
 /// Basenames that identify a Divan-owned hook command (for idempotency + clean
 /// uninstall). Any `command` ending with one of these is "ours".
-const DIVAN_BASENAMES: &[&str] = &["divan-turn-end.sh", "divan-activity.sh"];
+const DIVAN_BASENAMES: &[&str] = &[
+    "divan-turn-end.sh",
+    "divan-activity.sh",
+    "divan-pretooluse.sh",
+];
 
 fn is_divan_command(cmd: &str) -> bool {
     DIVAN_BASENAMES.iter().any(|b| cmd.ends_with(b))
@@ -46,6 +53,7 @@ pub fn merge_install(
     mut root: Value,
     turn_end_path: &Path,
     activity_path: &Path,
+    pretooluse_path: &Path,
 ) -> Result<Value, SettingsError> {
     if root.is_null() {
         root = Value::Object(Map::new());
@@ -61,17 +69,35 @@ pub fn merge_install(
         .as_object_mut()
         .ok_or(SettingsError::NotAnObject("hooks"))?;
 
-    add_command_entry(hooks, TURN_END_EVENT, &turn_end_path.to_string_lossy())?;
-    add_command_entry(hooks, ACTIVITY_EVENT, &activity_path.to_string_lossy())?;
+    add_command_entry(
+        hooks,
+        TURN_END_EVENT,
+        None,
+        &turn_end_path.to_string_lossy(),
+    )?;
+    add_command_entry(
+        hooks,
+        ACTIVITY_EVENT,
+        None,
+        &activity_path.to_string_lossy(),
+    )?;
+    // PreToolUse write-path boundary (F3.2), scoped to file-mutating tools.
+    add_command_entry(
+        hooks,
+        PRETOOLUSE_EVENT,
+        Some(PRETOOLUSE_MATCHER),
+        &pretooluse_path.to_string_lossy(),
+    )?;
 
     Ok(root)
 }
 
-/// Append `{ "hooks": [ { "type":"command", "command": cmd } ] }` under `event`,
-/// unless a Divan entry for that script basename already exists (idempotent).
+/// Append `{ ["matcher": m,] "hooks": [ { "type":"command", "command": cmd } ] }`
+/// under `event`, unless a Divan entry for that script already exists (idempotent).
 fn add_command_entry(
     hooks: &mut Map<String, Value>,
     event: &str,
+    matcher: Option<&str>,
     command: &str,
 ) -> Result<(), SettingsError> {
     let arr = hooks
@@ -101,9 +127,15 @@ fn add_command_entry(
         return Ok(());
     }
 
-    arr.push(serde_json::json!({
-        "hooks": [ { "type": "command", "command": command } ]
-    }));
+    let mut entry = Map::new();
+    if let Some(m) = matcher {
+        entry.insert("matcher".to_string(), Value::String(m.to_string()));
+    }
+    entry.insert(
+        "hooks".to_string(),
+        serde_json::json!([ { "type": "command", "command": command } ]),
+    );
+    arr.push(Value::Object(entry));
     Ok(())
 }
 
@@ -121,7 +153,7 @@ pub fn merge_uninstall(mut root: Value) -> Result<Value, SettingsError> {
         None => return Ok(root),
     };
 
-    for event in [TURN_END_EVENT, ACTIVITY_EVENT] {
+    for event in [TURN_END_EVENT, ACTIVITY_EVENT, PRETOOLUSE_EVENT] {
         if let Some(arr) = hooks.get_mut(event).and_then(Value::as_array_mut) {
             strip_divan_from_event(arr);
         }
@@ -179,7 +211,8 @@ mod tests {
         });
         let te = PathBuf::from("/cfg/divan/divan-turn-end.sh");
         let ac = PathBuf::from("/cfg/divan/divan-activity.sh");
-        let merged = merge_install(user.clone(), &te, &ac).unwrap();
+        let pt = PathBuf::from("/cfg/divan/divan-pretooluse.sh");
+        let merged = merge_install(user.clone(), &te, &ac, &pt).unwrap();
         let back = merge_uninstall(merged).unwrap();
         assert_eq!(back, user, "uninstall restores exact user-only config");
     }
@@ -188,9 +221,14 @@ mod tests {
     fn merge_from_empty_creates_hooks_object() {
         let te = PathBuf::from("/d/divan-turn-end.sh");
         let ac = PathBuf::from("/d/divan-activity.sh");
-        let merged = merge_install(Value::Null, &te, &ac).unwrap();
+        let pt = PathBuf::from("/d/divan-pretooluse.sh");
+        let merged = merge_install(Value::Null, &te, &ac, &pt).unwrap();
         assert!(merged["hooks"]["UserPromptSubmit"].is_array());
         assert!(merged["hooks"]["Stop"].is_array());
+        assert_eq!(
+            merged["hooks"]["PreToolUse"][0]["matcher"],
+            "Write|Edit|MultiEdit"
+        );
         // Uninstall back to empty object (no stray hooks key).
         let back = merge_uninstall(merged).unwrap();
         assert_eq!(back, serde_json::json!({}));
