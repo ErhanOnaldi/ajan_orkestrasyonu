@@ -9,6 +9,7 @@ members = [
     "crates/divan-cli",
     "crates/divan-mcp",
     "crates/divan-hooks",
+    "crates/divan-tui",
 ]
 
 [workspace.package]
@@ -41,6 +42,9 @@ rmcp = { version = "1.7", features = ["server", "macros", "transport-io"] }
 schemars = "1"
 # Cost Router rule files (spec §5.2 router.rules.yaml)
 serde_yaml = "0.9"
+# TUI (Faz 4, spec §6 ratatui)
+ratatui = "0.29"
+crossterm = "0.28"
 # Internal crates
 divan-core = { path = "crates/divan-core" }
 divan-db = { path = "crates/divan-db" }

@@ -48,6 +48,8 @@ enum Command {
     },
     /// Show a trace timeline + token/cost metrics (accepts a trace id or task id).
     Trace { id: String },
+    /// Launch the interactive TUI (ratatui; needs a real terminal).
+    Tui,
     /// List registered agents (id, tool, capabilities).
     Agents,
     /// List messages, optionally filtered (pointer view; Faz 2).
@@ -144,6 +146,7 @@ async fn main() -> Result<()> {
             print_trace(&r);
             Ok(())
         }
+        Command::Tui => launch_tui(),
         Command::Run { task, flow, repo } => run(sock, task, flow, repo).await,
         Command::Log { task, trace } => {
             let params = serde_json::json!({ "task": task, "trace": trace });
@@ -271,6 +274,25 @@ fn mcp_print_config(tool: &str, agent: Option<String>) -> Result<()> {
     eprintln!(
         "# register with e.g.: claude --mcp-config <file> --strict-mcp-config \\\n#   --allowedTools mcp__divan__send_message mcp__divan__publish_artifact ..."
     );
+    Ok(())
+}
+
+/// Launch the interactive TUI binary, inheriting the terminal (spec §7).
+fn launch_tui() -> Result<()> {
+    let exe = std::env::current_exe()?;
+    let dir = exe.parent().context("no parent dir for current exe")?;
+    let cand = dir.join("divan-tui");
+    let bin = if cand.exists() {
+        cand
+    } else {
+        PathBuf::from("divan-tui")
+    };
+    let status = std::process::Command::new(&bin)
+        .status()
+        .with_context(|| format!("failed to launch {}", bin.display()))?;
+    if !status.success() {
+        bail!("divan-tui exited with {status}");
+    }
     Ok(())
 }
 
