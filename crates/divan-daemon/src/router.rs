@@ -188,11 +188,15 @@ impl CostRouter {
             .map(|c| (self.score(c, task, author, &matched, &mut reasons), *c))
             .collect();
 
-        // 3. Deterministic winner: score desc, then cost_class asc, then id asc.
+        // 3. Deterministic winner. Tie-break (when `prefer` scores are equal):
+        //    a) score desc; b) prefer a full multi-turn adapter over a degraded
+        //    one-shot (agy) — a hung one-shot reviewer should never be the default
+        //    pick over a proven reviewer; c) cheaper cost_class (K9); d) id asc.
         let winner = scored
             .iter()
             .max_by(|a, b| {
                 a.0.cmp(&b.0)
+                    .then((a.1.multi_turn as u8).cmp(&(b.1.multi_turn as u8)))
                     .then(b.1.cost_class.cmp(&a.1.cost_class))
                     .then(b.1.id.cmp(&a.1.id))
             })
@@ -351,6 +355,29 @@ mod tests {
             router.pick(&task, &[agy], None),
             Err(RouterError::NoCandidate { .. })
         ));
+    }
+
+    #[test]
+    fn review_tiebreak_prefers_full_adapter_over_degraded_oneshot() {
+        // codex (multi_turn, cost 4, review) and agy (one-shot, cost 2, review)
+        // both score equally for a review (different-vendor + review skill). The
+        // tiebreak must pick codex — a hung one-shot must not be the default pick.
+        let router = CostRouter::default_rules();
+        let claude = agent("claude-1", AgentTool::Claude, 5, &["implement"], true);
+        let codex = agent("codex-1", AgentTool::Codex, 4, &["review"], true);
+        let agy = agent("agy-1", AgentTool::Agy, 2, &["review"], false);
+        let task = RouteTask {
+            kind: TaskKind::Review,
+            multi_turn: false,
+        };
+        let d = router
+            .pick(&task, &[agy, codex, claude.clone()], Some(&claude))
+            .unwrap();
+        assert_eq!(
+            d.agent,
+            AgentId::new("codex-1"),
+            "full adapter beats degraded one-shot on tie"
+        );
     }
 
     #[test]
