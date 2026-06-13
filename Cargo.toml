@@ -17,8 +17,8 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 authors = ["Erhan Önaldı"]
-repository = "https://github.com/ErhanOnaldi/divan"
-rust-version = "1.80"
+repository = "https://github.com/ErhanOnaldi/ajan_orkestrasyonu"
+rust-version = "1.88"
 
 [workspace.dependencies]
 # Domain / serialization
