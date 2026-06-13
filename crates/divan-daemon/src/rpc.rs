@@ -329,6 +329,9 @@ fn messages(req: &RpcRequest, state: &DaemonState) -> RpcResponse {
                 "summary": m.summary,
                 "task": m.task_id.as_ref().map(|t| t.as_str()),
                 "artifact": m.artifact_ref.as_ref().map(|a| a.as_str()),
+                // Fan-out edge: links a per-target copy to its source broadcast
+                // (P0.2 / F4.1 message-edge query).
+                "origin": m.origin_message_id.as_ref().map(|o| o.as_str()),
                 "delivered": m.delivered_at.is_some(),
             })
         })
@@ -619,6 +622,19 @@ fn status(scheduler: &Scheduler) -> RpcResponse {
         Ok(t) => t,
         Err(e) => return RpcResponse::err(e.to_string()),
     };
+    // An agent's current task = its claimed/working assigned task (§F4.2 panel).
+    let current_task_of = |id: &AgentId| -> Option<String> {
+        tasks
+            .iter()
+            .find(|t| {
+                t.assignee.as_ref() == Some(id)
+                    && matches!(
+                        t.state,
+                        divan_core::TaskState::Claimed | divan_core::TaskState::Working
+                    )
+            })
+            .map(|t| t.id.to_string())
+    };
     let agents_json: Vec<_> = agents
         .iter()
         .map(|a| {
@@ -626,15 +642,25 @@ fn status(scheduler: &Scheduler) -> RpcResponse {
                 "id": a.id.as_str(), "tool": a.tool.as_str(),
                 "status": format!("{:?}", a.status).to_lowercase(),
                 "cost_class": a.cost_class,
+                "current_task": current_task_of(&a.id),
             })
         })
         .collect();
     let tasks_json: Vec<_> = tasks
         .iter()
         .map(|t| {
+            // Dependency edges + parent for the task-tree / deps view (§F4.2).
+            let deps: Vec<String> = db
+                .blocked_by(&t.id)
+                .unwrap_or_default()
+                .iter()
+                .map(|d| d.to_string())
+                .collect();
             serde_json::json!({
                 "id": t.id.as_str(), "kind": t.kind.as_str(), "state": t.state.as_str(),
                 "assignee": t.assignee.as_ref().map(|a| a.as_str()),
+                "parent": t.parent_id.as_ref().map(|p| p.as_str()),
+                "deps": deps,
             })
         })
         .collect();

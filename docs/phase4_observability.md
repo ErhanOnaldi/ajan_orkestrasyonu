@@ -12,8 +12,20 @@ Tarih: 2026-06-13.
 | F4.3 | Token/maliyet metrikleri (CLI) | ✅ |
 | F4.4 | HTML export sınırı (v1.5 roadmap) | ✅ not |
 
-**Test durumu:** `cargo test --workspace` → **164 test** geçiyor. `cargo fmt` + `cargo clippy
+**Test durumu:** `cargo test --workspace` → **165 test** geçiyor. `cargo fmt` + `cargo clippy
 --workspace --all-targets` temiz.
+
+## İnceleme düzeltmeleri (Faz 4 kabul öncesi)
+
+- **[P1] Eksik gözlemlenebilirlik projeksiyonu giderildi.** `status` RPC artık her ajan için
+  `current_task` (claimed/working atanmış görev), her task için `parent` (görev-ağacı kenarı)
+  ve `deps` (`TaskStore::blocked_by` ile bağımlılık kenarları) döner; `messages` RPC her mesaja
+  `origin` (fan-out kaynak broadcast id'si, mesaj kenarı) ekler. TUI snapshot/parse/render bu
+  alanları taşır: Agents panelinde `@<task>`, Tasks panelinde `deps[...]` görünür. Yeni
+  `divan-db` testi `blocked_by_lists_dependency_edges` bağımlılık kenarlarını doğrular.
+- **[P2] Non-TTY panik giderildi.** `divan-tui` artık `--help`/`-h` ile kullanım yazıp 0 ile
+  çıkar; `--once`/`--dump` headless render eder; interaktif mod `IsTerminal` ile korunur —
+  TTY yoksa rehber yazıp 0 ile çıkar (eski `ratatui::init()` "Device not configured" paniği yok).
 
 ## F4.1 Trace query + F4.3 metrikleri
 
@@ -31,8 +43,9 @@ file_edit, turn_end, artifact_published; turns=2, cost_class_dist c4=1 c5=1).
 
 ## F4.2 TUI (`divan tui` / `divan-tui`)
 
-ratatui + crossterm, 4 panel: **Agents** (id/tool/status/cost), **Tasks** (gezinilebilir
-liste), **Messages** (akış), **Trace/detail** (seçili task'ın trace'i). ~1 sn poll; daemon
+ratatui + crossterm, 4 panel: **Agents** (id/tool/status/cost + `@current_task`), **Tasks**
+(gezinilebilir liste + `deps[...]` bağımlılık kenarları, parent görev-ağacı kenarı), **Messages**
+(akış + fan-out `origin` kenarı), **Trace/detail** (seçili task'ın trace'i). ~1 sn poll; daemon
 soketinden besler (mevcut RPC'leri kullanır, mantık daemon'da). Klavye: ↑/↓ (j/k) task
 seçimi, Enter trace yükle, Tab panel odağı, q/Esc çıkış (panic'te bile terminal restore).
 Daemon kapalıysa "daemon not running" gösterir, panik yok.

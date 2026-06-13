@@ -123,9 +123,10 @@ fn render_agents(frame: &mut Frame, area: Rect, snapshot: &Snapshot, focused: bo
             .agents
             .iter()
             .map(|a| {
+                let task = a.current_task.as_deref().unwrap_or("-");
                 ListItem::new(format!(
-                    "{:<12} {:<8} {:<8} cost={}",
-                    a.id, a.tool, a.status, a.cost_class
+                    "{:<12} {:<8} {:<7} c{} @{}",
+                    a.id, a.tool, a.status, a.cost_class, task
                 ))
             })
             .collect()
@@ -147,9 +148,15 @@ fn render_tasks(
             .tasks
             .iter()
             .map(|t| {
+                // Show dependency edges (the task-tree/deps view, §F4.2).
+                let deps = if t.deps.is_empty() {
+                    String::new()
+                } else {
+                    format!(" deps[{}]", t.deps.join(","))
+                };
                 ListItem::new(format!(
-                    "{:<16} {:<10} {:<9} {}",
-                    t.id, t.kind, t.state, t.assignee
+                    "{:<16} {:<10} {:<9} {}{}",
+                    t.id, t.kind, t.state, t.assignee, deps
                 ))
             })
             .collect()
@@ -244,6 +251,7 @@ mod tests {
                 tool: "claude".into(),
                 status: "busy".into(),
                 cost_class: 3,
+                current_task: Some("t-1".into()),
             }],
             tasks: vec![
                 TaskRow {
@@ -251,12 +259,16 @@ mod tests {
                     kind: "implement".into(),
                     state: "working".into(),
                     assignee: "claude-1".into(),
+                    parent: Some("root-1".into()),
+                    deps: vec![],
                 },
                 TaskRow {
                     id: "t-2".into(),
                     kind: "review".into(),
                     state: "open".into(),
                     assignee: "-".into(),
+                    parent: Some("root-1".into()),
+                    deps: vec!["t-1".into()],
                 },
             ],
             messages: vec![MessageRow {
@@ -264,6 +276,7 @@ mod tests {
                 to: "codex-1".into(),
                 kind: "result".into(),
                 summary: "implemented feature".into(),
+                origin: None,
                 delivered: true,
             }],
             trace: TraceDetail {
@@ -301,6 +314,9 @@ mod tests {
         assert!(out.contains("implemented feature"));
         assert!(out.contains("task_created"));
         assert!(out.contains("METRICS"));
+        // §F4.2 projection: agent current task + task dependency edges visible.
+        assert!(out.contains("@t-1"), "agent current_task shown");
+        assert!(out.contains("deps[t-1]"), "task dependency edge shown");
     }
 
     #[test]

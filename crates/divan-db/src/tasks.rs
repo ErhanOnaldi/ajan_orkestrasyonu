@@ -17,6 +17,9 @@ pub trait TaskStore {
     fn list_tasks(&self) -> DbResult<Vec<Task>>;
     /// Record a dependency edge: `task_id` is blocked by `blocked_by`.
     fn add_dep(&self, task_id: &TaskId, blocked_by: &TaskId) -> DbResult<()>;
+    /// The task ids that `task_id` is blocked by (its dependency edges), for the
+    /// task-tree / dependency view (F4.1/§F4.2).
+    fn blocked_by(&self, task_id: &TaskId) -> DbResult<Vec<TaskId>>;
     /// True if every dependency of `task_id` is in `done` (linear DAG, Faz 1).
     fn deps_satisfied(&self, task_id: &TaskId) -> DbResult<bool>;
     /// Assign an agent (and optionally a worktree) to a task.
@@ -113,6 +116,18 @@ impl TaskStore for Db {
             params![task_id.as_str(), blocked_by.as_str()],
         )?;
         Ok(())
+    }
+
+    fn blocked_by(&self, task_id: &TaskId) -> DbResult<Vec<TaskId>> {
+        let conn = self.lock()?;
+        let mut stmt = conn
+            .prepare("SELECT blocked_by FROM task_deps WHERE task_id = ?1 ORDER BY blocked_by")?;
+        let rows = stmt.query_map([task_id.as_str()], |r| r.get::<_, String>(0))?;
+        Ok(rows
+            .collect::<rusqlite::Result<Vec<_>>>()?
+            .into_iter()
+            .map(TaskId::new)
+            .collect())
     }
 
     fn deps_satisfied(&self, task_id: &TaskId) -> DbResult<bool> {
@@ -292,5 +307,19 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         db.create_task(&task("solo", TaskState::Open)).unwrap();
         assert!(db.deps_satisfied(&TaskId::new("solo")).unwrap());
+    }
+
+    #[test]
+    fn blocked_by_lists_dependency_edges() {
+        let db = Db::open_in_memory().unwrap();
+        db.create_task(&task("impl", TaskState::Open)).unwrap();
+        db.create_task(&task("review", TaskState::Open)).unwrap();
+        db.add_dep(&TaskId::new("review"), &TaskId::new("impl"))
+            .unwrap();
+        assert_eq!(
+            db.blocked_by(&TaskId::new("review")).unwrap(),
+            vec![TaskId::new("impl")]
+        );
+        assert!(db.blocked_by(&TaskId::new("impl")).unwrap().is_empty());
     }
 }

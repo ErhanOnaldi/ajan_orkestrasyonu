@@ -25,15 +25,35 @@ use crate::ui::Focus;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(1000);
 
+const USAGE: &str = "divan-tui — Divan observability TUI (ratatui)\n\n\
+USAGE:\n  divan-tui            launch the interactive screen (needs a real terminal)\n  \
+divan-tui --once     render one frame headlessly to stdout (no TTY) and exit\n  \
+divan-tui --help     show this help\n";
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    let once = std::env::args().any(|a| a == "--once" || a == "--dump");
+    let args: Vec<String> = std::env::args().skip(1).collect();
+
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        print!("{USAGE}");
+        return Ok(());
+    }
 
     let home = std::env::var("HOME").map(PathBuf::from).unwrap_or_default();
     let sock = DaemonConfig::default_for_home(&home).socket_path;
 
-    if once {
+    if args.iter().any(|a| a == "--once" || a == "--dump") {
         return run_once(&sock).await;
+    }
+
+    // Interactive mode needs a real terminal. Guard so a non-TTY invocation
+    // (pipe, CI, `--help`-less unknown arg) prints guidance instead of panicking
+    // inside ratatui::init() with "Device not configured".
+    use std::io::IsTerminal;
+    if !std::io::stdout().is_terminal() {
+        eprintln!("divan-tui: no interactive terminal; use `--once` for headless output.");
+        print!("{USAGE}");
+        return Ok(());
     }
     run_interactive(&sock).await
 }
@@ -294,6 +314,7 @@ mod tests {
                 kind: "implement".into(),
                 state: "open".into(),
                 assignee: "-".into(),
+                ..Default::default()
             })
             .collect();
         app

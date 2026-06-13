@@ -12,6 +12,8 @@ pub struct AgentRow {
     pub tool: String,
     pub status: String,
     pub cost_class: u64,
+    /// The agent's currently claimed/working task, if any (§F4.2 panel).
+    pub current_task: Option<String>,
 }
 
 /// One task row (from `status` → `tasks[]`). This is the navigable list.
@@ -21,6 +23,10 @@ pub struct TaskRow {
     pub kind: String,
     pub state: String,
     pub assignee: String,
+    /// Parent task id (the task-tree edge), if any (§F4.2).
+    pub parent: Option<String>,
+    /// Dependency edges: task ids this task is blocked by (§F4.2 deps).
+    pub deps: Vec<String>,
 }
 
 /// One message row (from `messages` → `messages[]`).
@@ -30,6 +36,8 @@ pub struct MessageRow {
     pub to: String,
     pub kind: String,
     pub summary: String,
+    /// Source broadcast id for a fan-out copy (the message-edge, F4.1), if any.
+    pub origin: Option<String>,
     pub delivered: bool,
 }
 
@@ -85,6 +93,10 @@ pub fn parse_agents(status_result: &Value) -> Vec<AgentRow> {
                     tool: s(a, "tool"),
                     status: s(a, "status"),
                     cost_class: a.get("cost_class").and_then(|c| c.as_u64()).unwrap_or(0),
+                    current_task: a
+                        .get("current_task")
+                        .and_then(|x| x.as_str())
+                        .map(str::to_string),
                 })
                 .collect()
         })
@@ -107,6 +119,16 @@ pub fn parse_tasks(status_result: &Value) -> Vec<TaskRow> {
                         .and_then(|x| x.as_str())
                         .unwrap_or("-")
                         .to_string(),
+                    parent: t.get("parent").and_then(|x| x.as_str()).map(str::to_string),
+                    deps: t
+                        .get("deps")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|d| d.as_str().map(str::to_string))
+                                .collect()
+                        })
+                        .unwrap_or_default(),
                 })
                 .collect()
         })
@@ -129,6 +151,7 @@ pub fn parse_messages(messages_result: &Value) -> Vec<MessageRow> {
                         .to_string(),
                     kind: s(m, "kind"),
                     summary: s(m, "summary"),
+                    origin: m.get("origin").and_then(|x| x.as_str()).map(str::to_string),
                     delivered: m
                         .get("delivered")
                         .and_then(|d| d.as_bool())
@@ -193,12 +216,16 @@ mod tests {
     fn sample_status() -> Value {
         json!({
             "agents": [
-                {"id": "claude-1", "tool": "claude", "status": "idle", "cost_class": 3},
-                {"id": "codex-1", "tool": "codex", "status": "busy", "cost_class": 1}
+                {"id": "claude-1", "tool": "claude", "status": "busy", "cost_class": 3,
+                 "current_task": "t-1"},
+                {"id": "codex-1", "tool": "codex", "status": "idle", "cost_class": 1,
+                 "current_task": null}
             ],
             "tasks": [
-                {"id": "t-1", "kind": "implement", "state": "working", "assignee": "claude-1"},
-                {"id": "t-2", "kind": "review", "state": "open", "assignee": null}
+                {"id": "t-1", "kind": "implement", "state": "working", "assignee": "claude-1",
+                 "parent": "root-1", "deps": []},
+                {"id": "t-2", "kind": "review", "state": "open", "assignee": null,
+                 "parent": "root-1", "deps": ["t-1"]}
             ]
         })
     }
@@ -209,9 +236,11 @@ mod tests {
         assert_eq!(agents.len(), 2);
         assert_eq!(agents[0].id, "claude-1");
         assert_eq!(agents[0].tool, "claude");
-        assert_eq!(agents[0].status, "idle");
+        assert_eq!(agents[0].status, "busy");
         assert_eq!(agents[0].cost_class, 3);
+        assert_eq!(agents[0].current_task.as_deref(), Some("t-1"));
         assert_eq!(agents[1].cost_class, 1);
+        assert_eq!(agents[1].current_task, None);
     }
 
     #[test]
@@ -221,15 +250,18 @@ mod tests {
         assert_eq!(tasks[0].id, "t-1");
         assert_eq!(tasks[0].state, "working");
         assert_eq!(tasks[0].assignee, "claude-1");
-        // Null assignee falls back to "-".
+        assert_eq!(tasks[0].parent.as_deref(), Some("root-1"));
+        assert!(tasks[0].deps.is_empty());
+        // Null assignee falls back to "-"; review depends on the implement task.
         assert_eq!(tasks[1].assignee, "-");
+        assert_eq!(tasks[1].deps, vec!["t-1".to_string()]);
     }
 
     #[test]
     fn parses_messages_with_broadcast_fallback() {
         let result = json!({
             "messages": [
-                {"from": "claude-1", "to": "codex-1", "kind": "result", "summary": "done", "delivered": true},
+                {"from": "claude-1", "to": "codex-1", "kind": "result", "summary": "done", "delivered": true, "origin": "b-1"},
                 {"from": "codex-1", "to": null, "kind": "note", "summary": "fyi", "delivered": false}
             ]
         });
@@ -238,7 +270,9 @@ mod tests {
         assert_eq!(msgs[0].from, "claude-1");
         assert_eq!(msgs[0].to, "codex-1");
         assert!(msgs[0].delivered);
+        assert_eq!(msgs[0].origin.as_deref(), Some("b-1")); // fan-out edge
         assert_eq!(msgs[1].to, "(broadcast)");
+        assert_eq!(msgs[1].origin, None);
         assert!(!msgs[1].delivered);
     }
 
