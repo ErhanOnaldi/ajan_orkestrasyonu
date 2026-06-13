@@ -131,6 +131,8 @@ async fn dispatch(req: RpcRequest, state: &DaemonState) -> RpcResponse {
             Err(e) => RpcResponse::err(e.to_string()),
         },
         method::KILL_SESSION => kill_session(&req, state),
+        // ---- Phase 4: observability ----
+        method::TRACE => trace_query(&req, state),
         other => RpcResponse::err(format!("unknown method: {other}")),
     }
 }
@@ -462,6 +464,47 @@ fn mcp_complete_task(req: &RpcRequest, state: &DaemonState) -> RpcResponse {
     RpcResponse::ok(serde_json::json!({
         "task_id": id.as_str(),
         "result_artifact": req.params.get("result_artifact"),
+    }))
+}
+
+/// `divan trace <id>` (F4.1): text timeline + token/cost metrics for a trace.
+/// A trace id, or any task id sharing the trace, both resolve.
+fn trace_query(req: &RpcRequest, state: &DaemonState) -> RpcResponse {
+    let id = param_str(req, "id");
+    let db = state.scheduler.db();
+    // Accept either a trace id or a task id (resolve the task's trace).
+    let trace_id = match db.get_task(&TaskId::new(id)) {
+        Ok(Some(t)) => t.trace_id,
+        _ => TraceId::new(id),
+    };
+    let events = match db.timeline(&trace_id) {
+        Ok(e) => e,
+        Err(e) => return RpcResponse::err(e.to_string()),
+    };
+    // Messages + task assignee cost classes for this trace, for metrics.
+    let messages: Vec<_> = db
+        .list_messages()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|m| m.trace_id.as_ref().map(|t| t.as_str()) == Some(trace_id.as_str()))
+        .collect();
+    let agents = db.list_agents().unwrap_or_default();
+    let cost_of = |a: &AgentId| agents.iter().find(|c| &c.id == a).map(|c| c.cost_class);
+    let cost_classes: Vec<u8> = db
+        .list_tasks()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|t| t.trace_id == trace_id)
+        .filter_map(|t| t.assignee.as_ref().and_then(cost_of))
+        .collect();
+
+    let timeline = divan_trace::Timeline::new(trace_id.as_str(), events);
+    let text = timeline.render_text();
+    let metrics = divan_trace::compute_metrics(&messages, &timeline.events, &cost_classes);
+    RpcResponse::ok(serde_json::json!({
+        "text": text,
+        "metrics": metrics,
+        "event_count": timeline.len(),
     }))
 }
 

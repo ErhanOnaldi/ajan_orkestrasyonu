@@ -104,4 +104,7 @@ pub mod method {
     // Faz 3 — router/policy commands (impl plan §7 Faz 3 command list).
     pub const ROUTER_EXPLAIN: &str = "router.explain";
     pub const KILL_SESSION: &str = "kill_session";
+
+    // Faz 4 — observability (impl plan §F4.1).
+    pub const TRACE: &str = "trace";
 }

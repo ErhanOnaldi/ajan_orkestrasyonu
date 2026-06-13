@@ -46,6 +46,8 @@ enum Command {
         #[arg(long)]
         trace: Option<String>,
     },
+    /// Show a trace timeline + token/cost metrics (accepts a trace id or task id).
+    Trace { id: String },
     /// List registered agents (id, tool, capabilities).
     Agents,
     /// List messages, optionally filtered (pointer view; Faz 2).
@@ -135,6 +137,11 @@ async fn main() -> Result<()> {
             let params = serde_json::json!({ "agent": agent, "task": task });
             let r = call(sock, method::MESSAGES, params).await?;
             print_messages(&r);
+            Ok(())
+        }
+        Command::Trace { id } => {
+            let r = call(sock, method::TRACE, serde_json::json!({"id": id})).await?;
+            print_trace(&r);
             Ok(())
         }
         Command::Run { task, flow, repo } => run(sock, task, flow, repo).await,
@@ -433,6 +440,40 @@ fn print_messages(r: &RpcResponse) {
                     .unwrap_or("(broadcast)"),
                 field(m, "summary"),
             );
+        }
+    }
+}
+
+fn print_trace(r: &RpcResponse) {
+    if !r.ok {
+        eprintln!(
+            "divan: trace failed: {}",
+            r.error.clone().unwrap_or_default()
+        );
+        return;
+    }
+    if let Some(text) = r.result.get("text").and_then(|v| v.as_str()) {
+        print!("{text}");
+    }
+    if let Some(m) = r.result.get("metrics") {
+        println!("\nMETRICS (proxy measures; no % savings claim)");
+        println!(
+            "  messages={}  avg_summary_len={:.1}  max={}  injections={}  turns={}",
+            m.get("message_count").and_then(|v| v.as_u64()).unwrap_or(0),
+            m.get("avg_summary_len")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0),
+            m.get("max_summary_len")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0),
+            m.get("injections").and_then(|v| v.as_u64()).unwrap_or(0),
+            m.get("turns").and_then(|v| v.as_u64()).unwrap_or(0),
+        );
+        if let Some(dist) = m.get("cost_class_dist").and_then(|v| v.as_object()) {
+            let parts: Vec<String> = dist.iter().map(|(k, v)| format!("c{k}={v}")).collect();
+            if !parts.is_empty() {
+                println!("  cost_class_dist: {}", parts.join(" "));
+            }
         }
     }
 }
