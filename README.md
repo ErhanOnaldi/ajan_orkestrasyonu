@@ -75,10 +75,24 @@ The daemon owns all state; the CLI and TUI are thin clients over its JSON-RPC
 socket. Tool-specific quirks live entirely in **adapters** — the core only ever
 sees normalized events.
 
+## Prerequisites
+
+- **Rust toolchain (`cargo`) ≥ 1.88** — get one at <https://rustup.rs>.
+- **macOS or Linux** (no Windows in v1).
+- **The agent CLIs you want to orchestrate, installed, authenticated, and on
+  your `PATH`.** Divan spawns these as child processes — it does not bundle or
+  log in for them. The default `write-review` flow uses **two**:
+  - [Claude Code](https://docs.claude.com/en/docs/claude-code) (`claude`) — implements.
+  - [Codex CLI](https://github.com/openai/codex) (`codex`) — reviews (a different
+    vendor, by design — K9 cost-aware routing).
+
+  Verify before you start: `claude --version` and `codex --version` both
+  resolve, and each is logged in. (Copilot CLI and Antigravity adapters exist
+  too, but the out-of-the-box flow targets `claude` + `codex`.)
+
 ## Install
 
-Requires a Rust toolchain (`cargo`) **≥ 1.88** — get one at <https://rustup.rs>.
-macOS or Linux.
+With the [prerequisites](#prerequisites) in place:
 
 ```sh
 git clone https://github.com/ErhanOnaldi/ajan_orkestrasyonu
@@ -122,11 +136,15 @@ cargo uninstall divan-cli divan-daemon divan-mcp divan-tui
 ## Quickstart
 
 The 60-second tour of the *write → review* flow (one agent implements in an
-isolated worktree, a second reviews, you approve the merge):
+isolated worktree, a second reviews, you approve the merge).
+
+Before you run it, make sure the [prerequisites](#prerequisites) are met:
+`claude` and `codex` are installed, authenticated, and on `PATH`, and `--repo`
+points at an **existing git repository** (worktree isolation, K7, needs one).
 
 ```sh
 divan up                                         # start the hub daemon
-divan run "add a CHANGELOG.md" --repo ~/code/myproj   # write-review flow
+divan run "add a CHANGELOG.md" --repo ~/code/myproj   # write-review flow (--repo = a git repo)
 divan tui                                        # watch it live (q to quit)
 
 divan status                                     # agents + tasks at a glance
