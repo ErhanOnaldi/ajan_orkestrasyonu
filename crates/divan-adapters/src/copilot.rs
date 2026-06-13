@@ -45,23 +45,27 @@ use tokio::sync::Mutex;
 ///
 /// This is `pub` so the daemon / `policy explain` can show the exact compiled
 /// arguments (F3.4 acceptance: "`--allow-tool` arguments visible in
-/// router/policy explain output"). The mapping is intentionally simple:
+/// router/policy explain output"). The mapping:
 ///
 /// - `read_only == true`  → allow **nothing** (no `write`, no `shell`); the
 ///   session is a reviewer and may only read the worktree.
-/// - `read_only == false` → allow `write` (scoped to `current_dir`, the task
-///   worktree). No shell is allowed by default; a richer shell allowlist is a
-///   future Policy Engine input.
+/// - `read_only == false` + worktree → `write(<worktree>/**)`: copilot's native
+///   path-scoped write filter. **Verified live (2026-06-12):** copilot REFUSES a
+///   write outside the pattern ("permission denied for that path"), so this is a
+///   real tool-side boundary (§3.4 — K8 enforced natively), not just `current_dir`.
+/// - `read_only == false` + no worktree → bare `write` (no path to bound to;
+///   should not happen for a real write task, which always has a worktree).
 ///
 /// Each returned `String` is one value to pass after a `--allow-tool` flag.
 pub fn compile_allow_tools(ctx: &SpawnCtx) -> Vec<String> {
     if ctx.read_only {
         // Reviewer: no write, no shell. Copilot may only read the worktree.
-        vec![]
-    } else {
-        // Write task: the `write` capability compiles to the native `write`
-        // tool filter, scoped to the worktree via `current_dir` at spawn.
-        vec!["write".to_string()]
+        return vec![];
+    }
+    match &ctx.worktree {
+        // Scope writes to the worktree subtree (the F3.4 boundary, verified).
+        Some(wt) => vec![format!("write({}/**)", wt.display())],
+        None => vec!["write".to_string()],
     }
 }
 
@@ -338,7 +342,18 @@ mod tests {
     }
 
     #[test]
-    fn allow_tools_write_when_not_read_only() {
+    fn allow_tools_write_scoped_to_worktree() {
+        // Write task with a worktree → path-scoped native filter (F3.4, verified).
+        let mut c = ctx(false);
+        c.worktree = Some(std::path::PathBuf::from("/wt/task-1"));
+        assert_eq!(
+            compile_allow_tools(&c),
+            vec!["write(/wt/task-1/**)".to_string()]
+        );
+    }
+
+    #[test]
+    fn allow_tools_bare_write_without_worktree() {
         assert_eq!(compile_allow_tools(&ctx(false)), vec!["write".to_string()]);
     }
 

@@ -171,6 +171,13 @@ pub fn check_kill(db: &Db, caller: &AgentId, session_owner: &AgentId) -> Result<
 
 /// `spawn(target)`: requires the `spawn` capability AND the target's cost class
 /// must not exceed the caller's (spec §5.1). F3.1.
+///
+/// This is the policy primitive for an **agent-initiated** spawn (an agent with
+/// the `spawn` capability launching another agent). Phase 3 has no agent-facing
+/// spawn entry point yet — the hub's own write-review writer/reviewer spawns are
+/// hub authority (not an agent action, like the watchdog's kills, spec §3.7), so
+/// they do not pass through here. When a `spawn`/sub-agent MCP tool is added,
+/// its handler calls this (the wiring point is the new tool, not the scheduler).
 pub fn check_spawn(db: &Db, caller: &AgentId, target_cost: CostClass) -> Result<(), PolicyDenied> {
     if !has_cap(db, caller, Capability::Spawn) {
         return Err(deny(

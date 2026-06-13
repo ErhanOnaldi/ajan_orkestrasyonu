@@ -195,10 +195,12 @@ async fn main() -> Result<()> {
     }
 }
 
-/// Default agent id for a tool (the built-in registrations, F1).
+/// Default agent id for a tool (the built-in registrations).
 fn default_agent_for(tool: &str) -> &'static str {
     match tool {
         "codex" => "codex-1",
+        "copilot" => "copilot-1",
+        "agy" => "agy-1",
         _ => "claude-1",
     }
 }

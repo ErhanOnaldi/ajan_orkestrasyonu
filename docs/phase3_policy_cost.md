@@ -48,9 +48,11 @@ exclude. Aday yoksa deterministik `NoCandidate` hatası.
 ## Adaptörler
 
 - **CopilotAdapter** (3. adaptör, §3.4): `copilot -p` + `--allow-tool`
-  derlemesi (`write` capability → native `write` filtresi, worktree'ye
-  `current_dir` ile sınırlı). Düz metin çıktı → `FileEdit` git diff'ten türetilir;
-  `ToolCall` granülaritesi yok (dokümante, sentetik `tool_call_unavailable` not).
+  derlemesi. Write yetkisi **`write(<worktree>/**)`** path-scoped filtresine
+  derlenir; **canlı doğrulandı (2026-06-12):** copilot pattern dışına yazmayı
+  reddeder ("permission denied for that path") — worktree sınırı araç tarafında
+  gerçekten zorlanır (yalnız `current_dir` değil). Düz metin çıktı → `FileEdit`
+  git diff'ten; `ToolCall` granülaritesi yok (sentetik `tool_call_unavailable`).
 - **AgyAdapter** (degraded, §3.5): `agy -p` one-shot; `multi_turn=false` (router
   multi-turn işlerde dışlar); `resume` her zaman `Unsupported` (issue #7); kabul
   edilen kind'lar `review/research/analyze/report`.
@@ -70,6 +72,10 @@ exclude. Aday yoksa deterministik `NoCandidate` hatası.
 - Path canonicalization lexical (symlink kaçışı sertleştirmesi sonraki iş).
 - Router skoru sabit (telemetri-beslemeli skor v1.5).
 - Copilot/Agy resume sınırlı (copilot doğrulanmadı; agy issue #7).
+- `check_spawn` bir **primitif**: ajan-başlatımlı spawn (capability `spawn`) için
+  hazır; Faz 3'te ajan-yüzlü spawn giriş noktası yok (hub'ın kendi write-review
+  spawn'ları hub yetkisidir, watchdog gibi). Sub-agent/spawn MCP tool'u eklendiğinde
+  o handler `check_spawn`'ı çağırır.
 
 ## Faz 4'e devir
 

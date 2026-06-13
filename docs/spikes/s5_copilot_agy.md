@@ -56,6 +56,11 @@ grep -E "CLI app data directory|Created conversation|Print mode: conversation=" 
 - **`--allow-tool` desen sözdizimi doğrulandı:** `write`, `shell(<cmd>)`, `<MCP>(<tool>)`;
   `--deny-tool` ile eşleştirilebilir. Bu **K8'in araç tarafında native uygulanabildiği tek
   adaptör** (§3.4'teki en güçlü artı) — teyit edildi.
+  > **EK DOĞRULAMA (Faz 3, 2026-06-12):** `write(<glob>)` **path-scoped** filtresi de
+  > çalışıyor: `--allow-tool 'write(/tmp/x/sub/**)'` ile pattern DIŞINA yazma denemesi
+  > copilot tarafından REDDEDİLDİ ("permission denied for that path"). Yani CopilotAdapter
+  > write yetkisini `write(<worktree>/**)` olarak derler → worktree sınırı araç tarafında
+  > gerçekten zorlanır (F3.4), yalnız `current_dir` değil.
 - **Olay normalizasyonu:** stream-json olmadığı için `FileEdit` worktree git diff'inden
   türetilir (stderr `Changes +N -M` yalnız kaba sayaç, path vermez). `ToolCall` granülaritesi
   stderr'deki `●` satırlarından kısmen okunabilir ama v1'de eksik kabul edilir (§3.4).
