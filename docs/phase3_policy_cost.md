@@ -12,10 +12,12 @@ Tarih: 2026-06-12.
 | F3.3 | Router YAML engine (match/prefer/exclude, `different_vendor_than`, `multi_turn` exclude) | ✅ |
 | F3.4 | CopilotAdapter (`--allow-tool` derlemesi, diff-tabanlı FileEdit) | ✅ |
 | F3.5 | AgyAdapter (degraded one-shot, `multi_turn=false`, resume=Unsupported) | ✅ |
-| F3.6 | Demo (policy denial + router decision + 3. adaptör) | ✅ test kapsaması; canlı opsiyonel |
+| F3.6 | Demo (policy denial + router decision + 3. adaptör) | ✅ canlı koşuldu (2026-06-12) |
 
-**Test durumu:** `cargo test --workspace` → 147 test geçiyor. `cargo fmt` + `cargo clippy
---workspace --all-targets` temiz.
+**Test durumu:** `cargo test --workspace` → **149 test** geçiyor (adapters 30, daemon-lib 45,
+messaging_rpc 6, core 26, db 31, hooks 10, trace 1). `cargo fmt` + `cargo clippy
+--workspace --all-targets` temiz. Not: 4 gerçek-CLI testi (`DIVAN_TEST_CLAUDE/CODEX/
+COPILOT/AGY`) env-gated — env yoksa erken döner (yine "passed"), varsa gerçek CLI'ı çağırır.
 
 ## Policy Engine (K8, §5.1)
 
@@ -58,14 +60,36 @@ exclude. Aday yoksa deterministik `NoCandidate` hatası.
   edilen kind'lar `review/research/analyze/report`.
 - 4 adaptör de `divan agents` / AgentCard listesinde.
 
-## F3.6 demo kapsaması (otomatik)
+## F3.6 demo — otomatik kapsama
 
 - `policy::tests` — yetkisiz write/kill reddi + trace (F3.1).
 - `messaging_rpc.rs` — `pretooluse_enforces_worktree_write_boundary` (F3.2),
   `kill_session_denied_for_non_owner` (F3.6), `delegate_task_is_policy_gated`.
-- `router::tests` — review→farklı vendor, multi-turn→agy hariç, no-candidate.
-- Canlı demo (gerçek claude/copilot writer + farklı vendor reviewer + worktree
-  dışı yazma reddi) `~/.claude` hook kurulumu + token gerektirir; kullanıcı tetikler.
+- `router::tests` — review→farklı vendor, multi-turn→agy hariç, no-candidate,
+  tiebreak full-adapter > degraded one-shot.
+
+## F3.6 demo — canlı koşum (2026-06-12, gerçek CLI)
+
+Gerçek `claude` + `codex` ile, throwaway repo'da koşuldu. Doğrulananlar:
+
+- **Yetkisiz kill reddi (F3.6):** soket üzerinden `kill_session{caller:codex-1,
+  owner:claude-1}` → `policy denied: codex-1 cannot kill: lacks kill capability`.
+- **Copilot worktree write sınırı (F3.4):** `copilot --allow-tool 'write(<glob>)'`
+  ile pattern dışına yazma denemesi copilot tarafından REDDEDİLDİ ("permission
+  denied for that path") → CopilotAdapter `write(<worktree>/**)` derler (yalnız
+  `current_dir` değil; araç tarafında gerçek sınır).
+- **Router cross-vendor reviewer (F3.3):** `divan run "<görev>" --flow write-review`
+  → writer claude-1, router reviewer'ı **codex-1** seçti (writer'dan farklı vendor);
+  `router_decision` trace + `divan router explain <review-task>` kararı + eşleşen
+  kural [1] + gerekçeleri gösterdi; akış temiz tamamlandı (4 artifact).
+- **Canlı demoda yakalanan gerçek bulgu:** ilk koşumda router eşit-skorlu review
+  adaylarında en ucuzu (agy, degraded one-shot, issue #7) seçti; agy takıldı ve
+  900s review watchdog'u `failed(timeout)` ile düşürdü (routing + watchdog doğru
+  çalıştı). Tiebreak tam multi-turn adaptörü tercih edecek şekilde düzeltildi →
+  reviewer codex-1, temiz koşum.
+
+Not: tam hook-injection canlı demosu (`~/.claude`'a PreToolUse hook kurulumu)
+hâlâ kullanıcı tetikler; F3.2 mekanizması daemon RPC + `/bin/sh` testleriyle örtülü.
 
 ## Bilinen sınırlar (Faz 3)
 
