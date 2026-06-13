@@ -31,6 +31,17 @@ Tarih: 2026-06-12.
 - **Kapsamlı abonelik (K6):** broadcast yok; `subscribe(event_kind, filter)` + `broadcast`
   capability'si olmadan topic mesajı reddedilir (`policy_denied` trace).
 
+## Policy chokepoint (F2.3) ve canlı çakışma (F2.6)
+
+- **Policy chokepoint:** her MCP tool handler `policy::check(db, agent, action)`'tan geçer
+  (impl plan §F2.3). Faz 2'de fiilen uygulanan capability'ler: `broadcast` (bus'ta),
+  `delegate` (delegate_task), `read` (subscribe). Diğer eylemler chokepoint'ten geçer ama
+  Faz 2'de açıktır; tam capability matrisi (spec §5.1) Faz 3'te (F3.1) bu noktaya takılır.
+  Red → `policy_denied` trace.
+- **Canlı çakışma (F2.6):** scheduler artık her canlı `FileEdit` olayında
+  `MessageBus::record_touch` çağırır → `file_touches` yazılır; 30 sn içinde başka ajan aynı
+  path'e dokunursa pointer alert ilgili ajanlara gider. (Önceki sürümde yalnız test çağırıyordu.)
+
 ## İki teslim yolu
 
 - **MCP (ajan → hub):** `divan-mcp` stdio sunucusu, 8 araç (`send_message`, `delegate_task`,
@@ -62,12 +73,16 @@ divan mcp print-config --agent codex-1 > /tmp/divan-mcp.json
 divan log                                  # tüm trafik: msg_sent / msg_delivered / artifact_published
 ```
 
+CLI komutları (Faz 2): `divan agents`, `divan messages [--agent <id>] [--task <id>]`,
+`divan install-hooks`, `divan uninstall-hooks`, `divan mcp print-config`.
+
 ## Bilinen sınırlar (Faz 2 — bilinçli)
 
 - **Canlı uçtan-uca demo otomatik koşulmadı** (gerçek `~/.claude` hook kurulumu + token
-  harcar). MCP ve hook yolları izole testlerle doğrulandı; canlı demo kullanıcı tetikler.
-- **Policy Engine minimal.** Yalnız `broadcast` capability geçidi var (F2.4 kabul). Tam
-  capability matrisi + PreToolUse path kontrolü **Faz 3**.
+  harcar). MCP ve hook yolları izole testlerle doğrulandı; MCP yüzü gerçek claude ile
+  canlı doğrulandı; tam hook-injection canlı demosu kullanıcı tetikler.
+- **Policy Engine minimal.** Chokepoint var; fiilen `broadcast`/`delegate`/`read` geçitleri.
+  Tam capability matrisi + PreToolUse path kontrolü **Faz 3**.
 - **Cost Router yok** (Faz 3). delegate/claim deterministik "en eski açık task" seçer.
 - **Batch header tek trace/task** taşır (ilk mesajınki); çok-trace batch'te her madde kendi
   pointer'ını listeler.

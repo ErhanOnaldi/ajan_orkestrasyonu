@@ -41,8 +41,15 @@ async fn spawn_daemon(
 ) {
     let sock = dir.join("d.sock");
     let db = Db::open_in_memory().unwrap();
-    db.upsert_agent(&card("claude-1", vec![divan_core::Capability::Broadcast]))
-        .unwrap();
+    db.upsert_agent(&card(
+        "claude-1",
+        vec![
+            divan_core::Capability::Broadcast,
+            divan_core::Capability::Delegate,
+            divan_core::Capability::Read,
+        ],
+    ))
+    .unwrap();
     db.upsert_agent(&card("codex-1", vec![divan_core::Capability::Read]))
         .unwrap();
     let artifacts = Arc::new(ArtifactStore::new(db.clone(), dir.join("art")));
@@ -146,6 +153,35 @@ async fn broadcast_requires_subscription_and_capability() {
     .await;
     assert!(!r.ok);
     assert!(r.error.unwrap().contains("broadcast"));
+
+    let _ = call(&sock, method::SHUTDOWN, Value::Null).await;
+    let _ = handle.await;
+}
+
+#[tokio::test]
+async fn delegate_task_is_policy_gated() {
+    let dir = tempfile::tempdir().unwrap();
+    let (sock, _db, _stop, handle) = spawn_daemon(dir.path()).await;
+
+    // codex-1 (read-only, no `delegate`) is denied.
+    let r = call(
+        &sock,
+        method::MCP_DELEGATE_TASK,
+        json!({"agent_id":"codex-1","kind":"review","spec_artifact":"abc"}),
+    )
+    .await;
+    assert!(!r.ok);
+    assert!(r.error.unwrap().contains("delegate"));
+
+    // claude-1 (has `delegate`) succeeds.
+    let r = call(
+        &sock,
+        method::MCP_DELEGATE_TASK,
+        json!({"agent_id":"claude-1","kind":"review","spec_artifact":"abc"}),
+    )
+    .await;
+    assert!(r.ok, "delegate failed: {:?}", r.error);
+    assert!(r.result["task_id"].as_str().is_some());
 
     let _ = call(&sock, method::SHUTDOWN, Value::Null).await;
     let _ = handle.await;

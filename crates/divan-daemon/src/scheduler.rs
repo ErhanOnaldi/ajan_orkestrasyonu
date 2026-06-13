@@ -95,6 +95,9 @@ pub struct Scheduler {
     /// user can pass either to `divan diff|merge|cleanup` (lost on restart —
     /// a documented v1 limitation; `.divan/runs/` persistence is later).
     runs: std::sync::Mutex<HashMap<String, RunRecord>>,
+    /// Message bus, used to record file touches + raise conflict alerts on live
+    /// `FileEdit` events (F2.6). `None` in pure scheduler unit tests.
+    bus: Option<crate::bus::MessageBus>,
     /// Retryable-error retry budget (spec §3.2 default 2).
     max_retries: u32,
     /// Backoff base between retries (kept tiny in tests).
@@ -115,9 +118,17 @@ impl Scheduler {
             adapters: HashMap::new(),
             config,
             runs: std::sync::Mutex::new(HashMap::new()),
+            bus: None,
             max_retries: 2,
             retry_delay: Duration::from_millis(50),
         }
+    }
+
+    /// Attach the message bus so live `FileEdit` events record file touches and
+    /// raise conflict alerts (F2.6).
+    pub fn with_bus(mut self, bus: crate::bus::MessageBus) -> Self {
+        self.bus = Some(bus);
+        self
     }
 
     /// Test/runtime knob for retry backoff.
@@ -207,12 +218,24 @@ impl Scheduler {
                         TraceEventKind::ToolCall,
                         serde_json::json!({ "name": name }),
                     ),
-                    NormalizedEvent::FileEdit { path, kind } => self.trace(
-                        task,
-                        Some(agent_id),
-                        TraceEventKind::FileEdit,
-                        serde_json::json!({ "path": path, "kind": format!("{kind:?}") }),
-                    ),
+                    NormalizedEvent::FileEdit { path, kind } => {
+                        self.trace(
+                            task,
+                            Some(agent_id),
+                            TraceEventKind::FileEdit,
+                            serde_json::json!({ "path": path, "kind": format!("{kind:?}") }),
+                        );
+                        // Record the touch + raise a conflict alert if another
+                        // agent touched the same path within the window (F2.6).
+                        if let Some(bus) = &self.bus {
+                            let _ = bus.record_touch(
+                                &path,
+                                agent_id,
+                                Some(&task.id),
+                                divan_core::now_ms(),
+                            );
+                        }
+                    }
                     NormalizedEvent::TurnEnd => self.trace(
                         task,
                         Some(agent_id),
@@ -1083,6 +1106,63 @@ mod tests {
         assert!(
             report.final_report_ref.is_some(),
             "final report ref surfaced"
+        );
+    }
+
+    #[tokio::test]
+    async fn live_file_edit_records_touch_for_conflict_detection() {
+        // F2.6 wiring: a FileEdit event from a bus-attached session records a
+        // file_touch, so a later same-path touch by another agent would conflict.
+        use divan_db::ConflictStore;
+        let repo = temp_repo();
+        let db = divan_db::Db::open_in_memory().unwrap();
+        let artifacts = Arc::new(ArtifactStore::new(
+            db.clone(),
+            repo.path().join(".divan/art"),
+        ));
+        let worktrees = Arc::new(WorktreeManager::new(repo.path().join(".divan/wt")));
+        let cfg = DaemonConfig::default_for_home(Path::new("/tmp"));
+        let bus = crate::bus::MessageBus::new(db.clone());
+        let mut s = Scheduler::new(db.clone(), artifacts, worktrees, cfg)
+            .with_bus(bus)
+            .with_retry(2, Duration::from_millis(1));
+        // Writer emits a FileEdit on src/x.rs during implement.
+        s.register_adapter(Arc::new(FakeAdapter::completing(
+            "claude-1",
+            vec![NormalizedEvent::FileEdit {
+                path: "src/x.rs".into(),
+                kind: divan_core::FileChangeKind::Added,
+            }],
+        )))
+        .unwrap();
+        s.register_adapter(Arc::new(
+            FakeAdapter::completing("codex-1", vec![]).with_tool(AgentTool::Codex),
+        ))
+        .unwrap();
+
+        s.run_write_review(
+            "Edit x",
+            "spec",
+            repo.path(),
+            &AgentId::new("claude-1"),
+            &AgentId::new("codex-1"),
+        )
+        .await
+        .unwrap();
+
+        // The touch was recorded: another agent touching src/x.rs now conflicts
+        // with claude-1.
+        let others = db
+            .conflicting_agents(
+                "src/x.rs",
+                &AgentId::new("agy-x"),
+                divan_core::now_ms(),
+                600_000,
+            )
+            .unwrap();
+        assert!(
+            others.contains(&AgentId::new("claude-1")),
+            "claude-1's FileEdit should have recorded a file_touch"
         );
     }
 

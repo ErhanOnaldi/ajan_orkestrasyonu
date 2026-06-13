@@ -192,6 +192,7 @@ impl DivanMcp {
         Parameters(args): Parameters<DelegateTaskArgs>,
     ) -> Result<CallToolResult, ErrorData> {
         let params = json!({
+            "agent_id": self.agent_id,
             "kind": args.kind,
             "spec_artifact": args.spec_artifact,
             "title": args.title,

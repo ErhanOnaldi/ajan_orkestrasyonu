@@ -94,4 +94,8 @@ pub mod method {
     pub const HOOK_TURN_END: &str = "hook.turn_end";
     pub const HOOK_SESSION_IDLE: &str = "hook.session_idle";
     pub const HOOK_CONFIRM: &str = "hook.confirm";
+
+    // Faz 2 — CLI read commands (impl plan §7 Faz 2 command list).
+    pub const AGENTS: &str = "agents";
+    pub const MESSAGES: &str = "messages";
 }

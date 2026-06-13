@@ -5,10 +5,11 @@
 //! thin client over this socket.
 
 use crate::bus::{MessageBus, SendRequest};
+use crate::policy::{self, Action};
 use crate::protocol::{method, RpcRequest, RpcResponse, RunParams};
 use crate::scheduler::Scheduler;
 use divan_core::{AgentId, EventFilter, MessageKind, Subscription, TaskId, TraceId};
-use divan_db::{AgentStore, SubscriptionStore, TaskStore, TraceStore};
+use divan_db::{AgentStore, MessageStore, SubscriptionStore, TaskStore, TraceStore};
 use std::path::Path;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -120,6 +121,9 @@ async fn dispatch(req: RpcRequest, state: &DaemonState) -> RpcResponse {
         method::HOOK_ACTIVITY => hook_activity(&req, state),
         method::HOOK_TURN_END | method::HOOK_SESSION_IDLE => hook_pending_batch(&req, state),
         method::HOOK_CONFIRM => hook_confirm(&req, state),
+        // ---- Phase 2: CLI read commands ----
+        method::AGENTS => mcp_list_agents(&req, state),
+        method::MESSAGES => messages(&req, state),
         other => RpcResponse::err(format!("unknown method: {other}")),
     }
 }
@@ -140,6 +144,11 @@ fn mcp_send_message(req: &RpcRequest, state: &DaemonState) -> RpcResponse {
         Some(k) => k,
         None => return RpcResponse::err("send_message: invalid `kind`"),
     };
+    // Route through the policy chokepoint; broadcast is additionally gated in the
+    // bus (it holds the sender + subscribers).
+    if let Err(e) = policy::check(&state.scheduler.db(), Some(&from), Action::SendDirect) {
+        return RpcResponse::err(e.to_string());
+    }
     let send = SendRequest {
         from,
         to: p.get("to").and_then(|v| v.as_str()).map(AgentId::new),
@@ -178,6 +187,9 @@ fn mcp_subscribe(req: &RpcRequest, state: &DaemonState) -> RpcResponse {
         Some(s) => AgentId::new(s),
         None => return RpcResponse::err("subscribe: `agent_id` required"),
     };
+    if let Err(e) = policy::check(&state.scheduler.db(), Some(&agent_id), Action::Subscribe) {
+        return RpcResponse::err(e.to_string());
+    }
     let event_kind = p
         .get("event_kind")
         .and_then(|v| v.as_str())
@@ -198,6 +210,9 @@ fn mcp_subscribe(req: &RpcRequest, state: &DaemonState) -> RpcResponse {
 }
 
 fn mcp_list_agents(req: &RpcRequest, state: &DaemonState) -> RpcResponse {
+    if let Err(e) = policy::check(&state.scheduler.db(), None, Action::ListAgents) {
+        return RpcResponse::err(e.to_string());
+    }
     let cap_filter = req
         .params
         .get("capability")
@@ -243,6 +258,9 @@ fn mcp_publish_artifact(req: &RpcRequest, state: &DaemonState) -> RpcResponse {
         .get("created_by")
         .and_then(|v| v.as_str())
         .map(AgentId::new);
+    if let Err(e) = policy::check(&state.scheduler.db(), by.as_ref(), Action::Publish) {
+        return RpcResponse::err(e.to_string());
+    }
     match state.scheduler.artifacts().put(
         &content,
         mime,
@@ -256,6 +274,9 @@ fn mcp_publish_artifact(req: &RpcRequest, state: &DaemonState) -> RpcResponse {
 }
 
 fn mcp_get_artifact(req: &RpcRequest, state: &DaemonState) -> RpcResponse {
+    if let Err(e) = policy::check(&state.scheduler.db(), None, Action::GetArtifact) {
+        return RpcResponse::err(e.to_string());
+    }
     let r = divan_core::ArtifactRef::new(param_str(req, "ref"));
     match state.scheduler.artifacts().get(&r) {
         Ok(bytes) => match String::from_utf8(bytes) {
@@ -270,10 +291,52 @@ fn parse_kind(s: &str) -> Option<divan_core::TaskKind> {
     serde_json::from_value(serde_json::Value::String(s.into())).ok()
 }
 
+/// `divan messages [--agent <id>] [--task <id>]` — list messages (pointer view).
+fn messages(req: &RpcRequest, state: &DaemonState) -> RpcResponse {
+    let all = match state.scheduler.db().list_messages() {
+        Ok(m) => m,
+        Err(e) => return RpcResponse::err(e.to_string()),
+    };
+    let agent = req.params.get("agent").and_then(|v| v.as_str());
+    let task = req.params.get("task").and_then(|v| v.as_str());
+    let rows: Vec<_> = all
+        .iter()
+        .filter(|m| {
+            agent
+                .map(|a| {
+                    m.from_agent.as_str() == a || m.to_agent.as_ref().map(|x| x.as_str()) == Some(a)
+                })
+                .unwrap_or(true)
+                && task
+                    .map(|t| m.task_id.as_ref().map(|x| x.as_str()) == Some(t))
+                    .unwrap_or(true)
+        })
+        .map(|m| {
+            serde_json::json!({
+                "id": m.id.as_str(),
+                "from": m.from_agent.as_str(),
+                "to": m.to_agent.as_ref().map(|a| a.as_str()),
+                "kind": m.kind.as_str(),
+                "summary": m.summary,
+                "task": m.task_id.as_ref().map(|t| t.as_str()),
+                "artifact": m.artifact_ref.as_ref().map(|a| a.as_str()),
+                "delivered": m.delivered_at.is_some(),
+            })
+        })
+        .collect();
+    RpcResponse::ok(serde_json::json!({"messages": rows}))
+}
+
 /// `delegate_task`: create an open task another agent can claim (swarm-style,
 /// spec §3.6-B). Heavy spec content stays in the artifact (`spec_artifact`, K4).
 fn mcp_delegate_task(req: &RpcRequest, state: &DaemonState) -> RpcResponse {
     let p = &req.params;
+    // Delegating requires the `delegate` capability (K8). The MCP server sends
+    // the caller's id as `agent_id`.
+    let caller = p.get("agent_id").and_then(|v| v.as_str()).map(AgentId::new);
+    if let Err(e) = policy::check(&state.scheduler.db(), caller.as_ref(), Action::Delegate) {
+        return RpcResponse::err(e.to_string());
+    }
     let kind = match p.get("kind").and_then(|v| v.as_str()).and_then(parse_kind) {
         Some(k) => k,
         None => return RpcResponse::err("delegate_task: invalid `kind`"),
@@ -317,6 +380,9 @@ fn mcp_claim_task(req: &RpcRequest, state: &DaemonState) -> RpcResponse {
         Some(s) => AgentId::new(s),
         None => return RpcResponse::err("claim_task: `agent_id` required"),
     };
+    if let Err(e) = policy::check(&state.scheduler.db(), Some(&agent), Action::Claim) {
+        return RpcResponse::err(e.to_string());
+    }
     let kind_filter = req
         .params
         .get("kind")
@@ -349,6 +415,9 @@ fn mcp_claim_task(req: &RpcRequest, state: &DaemonState) -> RpcResponse {
 /// `complete_task`: drive a claimed/working task to `done` and record the
 /// result artifact ref (spec §3.6-B). Unblocked dependents become claimable.
 fn mcp_complete_task(req: &RpcRequest, state: &DaemonState) -> RpcResponse {
+    if let Err(e) = policy::check(&state.scheduler.db(), None, Action::Complete) {
+        return RpcResponse::err(e.to_string());
+    }
     let id = TaskId::new(param_str(req, "task_id"));
     let db = state.scheduler.db();
     let task = match db.get_task(&id) {

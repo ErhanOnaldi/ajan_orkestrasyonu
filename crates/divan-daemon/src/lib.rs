@@ -5,6 +5,7 @@
 pub mod bus;
 pub mod config;
 pub mod lifecycle;
+pub mod policy;
 pub mod protocol;
 pub mod rpc;
 pub mod scheduler;

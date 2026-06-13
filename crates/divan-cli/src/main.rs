@@ -46,6 +46,15 @@ enum Command {
         #[arg(long)]
         trace: Option<String>,
     },
+    /// List registered agents (id, tool, capabilities).
+    Agents,
+    /// List messages, optionally filtered (pointer view; Faz 2).
+    Messages {
+        #[arg(long)]
+        agent: Option<String>,
+        #[arg(long)]
+        task: Option<String>,
+    },
     /// Show a task's worktree diff.
     Diff { task_id: String },
     /// Merge a task's worktree branch (explicit; never automatic).
@@ -104,6 +113,17 @@ async fn main() -> Result<()> {
         Command::Status => {
             let r = call(sock, method::STATUS, serde_json::Value::Null).await?;
             print_status(&r);
+            Ok(())
+        }
+        Command::Agents => {
+            let r = call(sock, method::AGENTS, serde_json::json!({})).await?;
+            print_agents(&r);
+            Ok(())
+        }
+        Command::Messages { agent, task } => {
+            let params = serde_json::json!({ "agent": agent, "task": task });
+            let r = call(sock, method::MESSAGES, params).await?;
+            print_messages(&r);
             Ok(())
         }
         Command::Run { task, flow, repo } => run(sock, task, flow, repo).await,
@@ -317,6 +337,72 @@ fn field(v: &serde_json::Value, key: &str) -> String {
         .and_then(|x| x.as_str())
         .unwrap_or("-")
         .to_string()
+}
+
+fn print_agents(r: &RpcResponse) {
+    if !r.ok {
+        eprintln!(
+            "divan: agents failed: {}",
+            r.error.clone().unwrap_or_default()
+        );
+        return;
+    }
+    if let Some(agents) = r.result.get("agents").and_then(|v| v.as_array()) {
+        for a in agents {
+            let caps = a
+                .get("capabilities")
+                .and_then(|c| c.as_array())
+                .map(|c| {
+                    c.iter()
+                        .filter_map(|x| x.as_str())
+                        .collect::<Vec<_>>()
+                        .join(",")
+                })
+                .unwrap_or_default();
+            println!(
+                "  {:<12} {:<8} [{}]",
+                field(a, "id"),
+                field(a, "tool"),
+                caps
+            );
+        }
+    }
+}
+
+fn print_messages(r: &RpcResponse) {
+    if !r.ok {
+        eprintln!(
+            "divan: messages failed: {}",
+            r.error.clone().unwrap_or_default()
+        );
+        return;
+    }
+    if let Some(msgs) = r.result.get("messages").and_then(|v| v.as_array()) {
+        if msgs.is_empty() {
+            println!("  (no messages)");
+        }
+        for m in msgs {
+            let delivered = if m
+                .get("delivered")
+                .and_then(|d| d.as_bool())
+                .unwrap_or(false)
+            {
+                "✓"
+            } else {
+                "·"
+            };
+            println!(
+                "  {} {:<10} {:<10} -> {:<10} {}",
+                delivered,
+                field(m, "kind"),
+                field(m, "from"),
+                m.get("to")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("(broadcast)"),
+                field(m, "summary"),
+            );
+        }
+    }
 }
 
 fn print_result(label: &str, r: &RpcResponse) {
